@@ -1,0 +1,137 @@
+# Settings
+ARG DEBIAN_VERSION=stable-20241223-slim
+ARG PASSWORD="fota"
+ARG VS_CODE_SERVER_VERSION=4.93.1
+ARG VS_CODE_SERVER_PORT=8800
+ARG VS_CODE_EXT_CPPTOOLS_VERSION=1.22.10
+ARG VS_CODE_EXT_HEX_EDITOR_VERSION=1.11.1
+ARG VS_CODE_EXT_CMAKETOOLS_VERSION=1.19.52
+ARG VIRTUAL_ENV=/opt/venv
+
+#-------------------------------------------------------------------------------
+# Base Image and Dependencies
+
+# Use Debian as the base image
+FROM debian:${DEBIAN_VERSION}
+
+# Redeclare arguments after FROM
+ARG PASSWORD
+ARG VS_CODE_SERVER_VERSION
+ARG VS_CODE_SERVER_PORT
+ARG VS_CODE_EXT_CPPTOOLS_VERSION
+ARG VS_CODE_EXT_HEX_EDITOR_VERSION
+ARG VS_CODE_EXT_CMAKETOOLS_VERSION
+ARG VIRTUAL_ENV
+ARG TARGETARCH
+
+# Set default shell during Docker image build to bash
+SHELL ["/bin/bash", "-c"]
+
+# Check if the target architecture is either x86_64 (amd64) or arm64 (aarch64)
+RUN if [ "$TARGETARCH" = "amd64" ] || [ "$TARGETARCH" = "arm64" ]; then \
+        echo "Architecture $TARGETARCH is supported."; \
+    else \
+        echo "Unsupported architecture: $TARGETARCH"; \
+        exit 1; \
+    fi
+
+# Set non-interactive frontend for apt-get to skip any user confirmations
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install base packages
+RUN apt-get -y update && \
+	apt-get install --no-install-recommends -y \
+    wget \
+    curl \
+    openssh-server \
+    python3 \
+    python3-pip \
+    python3-venv \
+    xz-utils \
+    dos2unix \
+    vim \
+    nano
+
+# Set root password
+RUN echo "root:${PASSWORD}" | chpasswd
+
+# Set up a Python virtual environment
+ENV VIRTUAL_ENV=${VIRTUAL_ENV}
+RUN python3 -m venv ${VIRTUAL_ENV}
+ENV PATH="${VIRTUAL_ENV}/bin:$PATH"
+
+# Set up a Python virtual environment
+ENV VIRTUAL_ENV=${VIRTUAL_ENV}
+RUN python3 -m venv ${VIRTUAL_ENV}
+ENV PATH="${VIRTUAL_ENV}/bin:$PATH"
+
+# Clean up stale packages
+RUN apt-get clean -y && \
+	apt-get autoremove --purge -y && \
+	rm -rf /var/lib/apt/lists/*
+
+# Set up directories
+RUN mkdir -p /workspace/ && \
+    mkdir -p /opt/toolchains
+
+# Set up sshd working directory
+RUN mkdir -p /var/run/sshd && \
+    chmod 0755 /var/run/sshd
+
+# Allow root login via SSH
+RUN sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config && \
+    sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
+
+# Expose SSH port
+EXPOSE 22
+
+#-------------------------------------------------------------------------------
+# VS Code Server
+
+# Set VS Code Server environment variables
+ENV VS_CODE_SERVER_VERSION=${VS_CODE_SERVER_VERSION}
+ENV VS_CODE_SERVER_PORT=${VS_CODE_SERVER_PORT}
+
+# Install VS Code Server
+RUN cd /tmp && \
+    wget ${WGET_ARGS} https://code-server.dev/install.sh && \
+    chmod +x install.sh && \
+    bash install.sh --version ${VS_CODE_SERVER_VERSION}
+
+# Download VS Code extensions (code-server extension manager does not work well)
+RUN cd /tmp && \
+    if [ "$TARGETARCH" = "amd64" ]; then \
+        wget ${WGET_ARGS} https://github.com/microsoft/vscode-cpptools/releases/download/v${VS_CODE_EXT_CPPTOOLS_VERSION}/cpptools-linux-x64.vsix -O cpptools.vsix; \
+    elif [ "$TARGETARCH" = "arm64" ]; then \
+        wget ${WGET_ARGS} https://github.com/microsoft/vscode-cpptools/releases/download/v${VS_CODE_EXT_CPPTOOLS_VERSION}/cpptools-linux-arm64.vsix -O cpptools.vsix; \
+    else \
+        echo "Unsupported architecture"; \
+        exit 1; \
+    fi && \
+    wget ${WGET_ARGS} https://github.com/microsoft/vscode-cmake-tools/releases/download/v${VS_CODE_EXT_CMAKETOOLS_VERSION}/cmake-tools.vsix -O cmake-tools.vsix && \
+    wget --compression=gzip ${WGET_ARGS} https://marketplace.visualstudio.com/_apis/public/gallery/publishers/ms-vscode/vsextensions/hexeditor/${VS_CODE_EXT_HEX_EDITOR_VERSION}/vspackage -O hexeditor.vsix
+
+# Install extensions
+RUN cd /tmp && \
+    code-server --install-extension cpptools.vsix && \
+    code-server --install-extension cmake-tools.vsix && \
+    code-server --install-extension hexeditor.vsix
+# TODO ^^^ This line is failing for some reason
+
+# Clean up
+RUN cd /tmp && \
+    rm install.sh && \
+    rm cpptools.vsix && \
+    rm cmake-tools.vsix && \
+    rm hexeditor.vsix
+
+#-------------------------------------------------------------------------------
+# Entrypoint
+
+# Activate the Python environment for shell sessions
+RUN echo "source ${VIRTUAL_ENV}/bin/activate" >> /root/.bashrc
+
+# Custom entrypoint
+COPY scripts/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
