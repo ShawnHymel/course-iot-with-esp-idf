@@ -1,0 +1,32 @@
+{
+    "folders": [
+        {
+            "name": "/workspace",
+            "path": "/workspace"
+        },
+        {
+            "name": "/opt/toolchains/esp-idf",
+            "path": "/opt/toolchains/esp-idf"
+        }
+    ],
+    "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "files.associations": {
+            "lvgl_input_device.h": "c",
+            "lvgl.h": "c",
+            "esp_chip_info.h": "c"
+        },
+        "workbench.colorTheme": "Default Dark+",
+        "C_Cpp.files.exclude": {
+            "**/build": true,
+            "**/test": true
+        }
+    },
+    "extensions": {
+        "recommendations": [
+            "ms-vscode.cpptools",
+            "ms-vscode.cmake-tools",
+            "ms-vscode.hexeditor"
+        ]
+    }
+}

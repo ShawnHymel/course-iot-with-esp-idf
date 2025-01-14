@@ -1,12 +1,12 @@
 # Settings
 ARG DEBIAN_VERSION=stable-20241223-slim
 ARG PASSWORD="fota"
+ARG IDF_VERSION=5.4
 ARG VS_CODE_SERVER_VERSION=4.93.1
 ARG VS_CODE_SERVER_PORT=8800
 ARG VS_CODE_EXT_CPPTOOLS_VERSION=1.22.10
 ARG VS_CODE_EXT_HEX_EDITOR_VERSION=1.11.1
 ARG VS_CODE_EXT_CMAKETOOLS_VERSION=1.19.52
-ARG VIRTUAL_ENV=/opt/venv
 
 #-------------------------------------------------------------------------------
 # Base Image and Dependencies
@@ -16,12 +16,12 @@ FROM debian:${DEBIAN_VERSION}
 
 # Redeclare arguments after FROM
 ARG PASSWORD
+ARG IDF_VERSION
 ARG VS_CODE_SERVER_VERSION
 ARG VS_CODE_SERVER_PORT
 ARG VS_CODE_EXT_CPPTOOLS_VERSION
 ARG VS_CODE_EXT_HEX_EDITOR_VERSION
 ARG VS_CODE_EXT_CMAKETOOLS_VERSION
-ARG VIRTUAL_ENV
 ARG TARGETARCH
 
 # Set default shell during Docker image build to bash
@@ -43,6 +43,7 @@ RUN apt-get -y update && \
 	apt-get install --no-install-recommends -y \
     wget \
     curl \
+    git \
     openssh-server \
     python3 \
     python3-pip \
@@ -50,20 +51,19 @@ RUN apt-get -y update && \
     xz-utils \
     dos2unix \
     vim \
-    nano
+    nano \
+    flex \
+    bison \
+    gperf \
+    cmake \
+    ninja-build \
+    ccache \
+    libffi-dev \
+    libssl-dev \
+    libusb-1.0-0
 
 # Set root password
 RUN echo "root:${PASSWORD}" | chpasswd
-
-# Set up a Python virtual environment
-ENV VIRTUAL_ENV=${VIRTUAL_ENV}
-RUN python3 -m venv ${VIRTUAL_ENV}
-ENV PATH="${VIRTUAL_ENV}/bin:$PATH"
-
-# Set up a Python virtual environment
-ENV VIRTUAL_ENV=${VIRTUAL_ENV}
-RUN python3 -m venv ${VIRTUAL_ENV}
-ENV PATH="${VIRTUAL_ENV}/bin:$PATH"
 
 # Clean up stale packages
 RUN apt-get clean -y && \
@@ -71,7 +71,7 @@ RUN apt-get clean -y && \
 	rm -rf /var/lib/apt/lists/*
 
 # Set up directories
-RUN mkdir -p /workspace/ && \
+RUN mkdir -p /workspace/.vscode && \
     mkdir -p /opt/toolchains
 
 # Set up sshd working directory
@@ -84,6 +84,30 @@ RUN sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/
 
 # Expose SSH port
 EXPOSE 22
+
+#-------------------------------------------------------------------------------
+# ESP-IDF
+
+# Set ESP-IDF environment variables
+ENV IDF_VERSION=${IDF_VERSION}
+ENV IDF_TOOLS_PATH=/opt/toolchains/espressif
+
+# Download and install ESP-IDF
+RUN cd /opt/toolchains && \
+    git clone --recursive --branch v${IDF_VERSION} --depth 1 https://github.com/espressif/esp-idf.git && \
+    cd esp-idf && \
+    ./install.sh all
+
+# Temporarily run ESP-IDF environment to get compiler path (for IntelliSense)
+RUN bash && \
+    . /opt/toolchains/esp-idf/export.sh && \
+    echo "IDF_COMPILER_PATH=$(whereis xtensa-esp-elf-gcc | awk '{print $2}')" >> /etc/environment && \
+    exit
+
+# Copy C/C++ IntelliSense configuration
+RUN mkdir -p /opt/toolchains/esp-idf/.vscode
+COPY scripts/esp-idf/c_cpp_properties.json /c_cpp_properties.json
+RUN ln -s /c_cpp_properties.json /workspace/.vscode/c_cpp_properties.json
 
 #-------------------------------------------------------------------------------
 # VS Code Server
@@ -116,7 +140,6 @@ RUN cd /tmp && \
     code-server --install-extension cpptools.vsix && \
     code-server --install-extension cmake-tools.vsix && \
     code-server --install-extension hexeditor.vsix
-# TODO ^^^ This line is failing for some reason
 
 # Clean up
 RUN cd /tmp && \
@@ -125,13 +148,23 @@ RUN cd /tmp && \
     rm cmake-tools.vsix && \
     rm hexeditor.vsix
 
+# Copy workspace configuration
+COPY scripts/fota.code-workspace /fota.code-workspace
+
 #-------------------------------------------------------------------------------
 # Entrypoint
 
-# Activate the Python environment for shell sessions
-RUN echo "source ${VIRTUAL_ENV}/bin/activate" >> /root/.bashrc
+# Export environment variables to be system-wide
+RUN echo "IDF_TOOLS_PATH=${IDF_TOOLS_PATH}" >> /etc/environment && \
+    echo "IDF_VERSION=${IDF_VERSION}" >> /etc/environment
+
+# Enable system environment variables in bash and enable ESP-IDF environment
+# RUN echo "source /etc/environment" >> /root/.bashrc && \
+#     echo "export IDF_COMPILER_PATH" >> /root/.bashrc && \
+#     echo "alias get_idf='. /opt/toolchains/esp-idf/export.sh'" >> /root/.bashrc && \
+#     echo "get_idf" >> /root/.bashrc
 
 # Custom entrypoint
-COPY scripts/entrypoint.sh /entrypoint.sh
+COPY scripts/esp-idf/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
