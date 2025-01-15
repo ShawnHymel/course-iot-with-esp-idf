@@ -67,6 +67,8 @@ Windows (PowerShell):
 docker run --rm -it -p 3333:3333 -p 22001:22 -p 8800:8800 -v "${PWD}\workspace:/workspace" -w /workspace env-esp-idf
 ```
 
+> **IMPORTANT**: The *entrypoint.sh* script will copy *c_cpp_properties.json* to your *workspace/.vscode* directory every time you run the image. This file helps *IntelliSense* know where to find things. Don't mess with this file!
+
 Alternatively, you can run the image in interactive mode by adding the `--entrypoint /bin/bash` argument. This will allow you to skip running the VS Code server in the background.
 
 ### Connect to Container

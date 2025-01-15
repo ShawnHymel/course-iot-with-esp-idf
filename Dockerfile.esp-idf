@@ -107,7 +107,6 @@ RUN bash && \
 # Copy C/C++ IntelliSense configuration
 RUN mkdir -p /opt/toolchains/esp-idf/.vscode
 COPY scripts/esp-idf/c_cpp_properties.json /c_cpp_properties.json
-RUN ln -s /c_cpp_properties.json /workspace/.vscode/c_cpp_properties.json
 
 #-------------------------------------------------------------------------------
 # VS Code Server
