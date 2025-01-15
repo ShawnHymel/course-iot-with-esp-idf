@@ -149,7 +149,7 @@ RUN cd /tmp && \
     rm hexeditor.vsix
 
 # Copy workspace configuration
-COPY scripts/fota.code-workspace /fota.code-workspace
+COPY scripts/esp-idf/esp-idf.code-workspace /esp-idf.code-workspace
 
 #-------------------------------------------------------------------------------
 # Entrypoint
@@ -158,11 +158,8 @@ COPY scripts/fota.code-workspace /fota.code-workspace
 RUN echo "IDF_TOOLS_PATH=${IDF_TOOLS_PATH}" >> /etc/environment && \
     echo "IDF_VERSION=${IDF_VERSION}" >> /etc/environment
 
-# Enable system environment variables in bash and enable ESP-IDF environment
-# RUN echo "source /etc/environment" >> /root/.bashrc && \
-#     echo "export IDF_COMPILER_PATH" >> /root/.bashrc && \
-#     echo "alias get_idf='. /opt/toolchains/esp-idf/export.sh'" >> /root/.bashrc && \
-#     echo "get_idf" >> /root/.bashrc
+# Copy VS Code settings to ESP-IDF workspace so we don't get submodule warnings
+COPY scripts/esp-idf/settings.json /opt/toolchains/esp-idf/.vscode/settings.json
 
 # Custom entrypoint
 COPY scripts/esp-idf/entrypoint.sh /entrypoint.sh
