@@ -45,6 +45,7 @@ RUN apt-get -y update && \
     curl \
     git \
     openssh-server \
+    locales \
     python3 \
     python3-pip \
     python3-venv \
@@ -59,6 +60,11 @@ RUN apt-get -y update && \
     ninja-build \
     ccache \
     libffi-dev \
+    libgcrypt20 \
+    libglib2.0-0 \
+    libpixman-1-0 \
+    libsdl2-2.0-0 \
+    libslirp0 \
     libssl-dev \
     libusb-1.0-0
 
@@ -108,6 +114,9 @@ RUN bash && \
 RUN mkdir -p /opt/toolchains/esp-idf/.vscode
 COPY scripts/esp-idf/c_cpp_properties.json /c_cpp_properties.json
 
+# Install QEMU (Espressif fork)
+RUN python3 /opt/toolchains/esp-idf/tools/idf_tools.py install qemu-xtensa qemu-riscv32
+
 #-------------------------------------------------------------------------------
 # VS Code Server
 
@@ -151,6 +160,14 @@ RUN cd /tmp && \
 COPY scripts/esp-idf/esp-idf.code-workspace /esp-idf.code-workspace
 
 #-------------------------------------------------------------------------------
+# Optional Settings
+
+# Initialise system locale (required by menuconfig)
+RUN sed -i '/^#.*en_US.UTF-8/s/^#//' /etc/locale.gen && \
+    locale-gen en_US.UTF-8 && \
+    update-locale LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
+
+#-------------------------------------------------------------------------------
 # Entrypoint
 
 # Export environment variables to be system-wide
@@ -159,6 +176,10 @@ RUN echo "IDF_TOOLS_PATH=${IDF_TOOLS_PATH}" >> /etc/environment && \
 
 # Copy VS Code settings to ESP-IDF workspace so we don't get submodule warnings
 COPY scripts/esp-idf/settings.json /opt/toolchains/esp-idf/.vscode/settings.json
+
+# Add alias to bashrc
+RUN echo "alias get_idf='. /opt/toolchains/esp-idf/export.sh'" >> /root/.bashrc && \
+    echo "get_idf" >> /root/.bashrc
 
 # Custom entrypoint
 COPY scripts/esp-idf/entrypoint.sh /entrypoint.sh
