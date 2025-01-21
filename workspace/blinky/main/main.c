@@ -25,6 +25,10 @@ void app_main(void)
         // Print LED state
         printf("LED state: %d\n", led_state);
 
+#ifdef QEMU_ENV
+        printf("I'm running on QEMU!\r\n");
+#endif
+
         // Delay
         vTaskDelay(sleep_time_ms / portTICK_PERIOD_MS); 
     }
