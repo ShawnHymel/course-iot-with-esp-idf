@@ -2,3 +2,11 @@
 **/.venv/
 **/venv/
 **/sdkconfig
+**/sdkconfig.old
+**/sdkconfig.defaults
+**/sdkconfig.bak
+**/sdkconfig.projbuild
+**/sdkconfig.projbuild.old
+**/sdkconfig.projbuild.defaults
+**/sdkconfig.projbuild.bak
+

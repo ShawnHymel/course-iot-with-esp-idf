@@ -24,8 +24,8 @@
 #include "sdkconfig.h"
 
 /* Constants that aren't configurable in menuconfig */
-#define WEB_SERVER "0.0.0.0"
-#define WEB_PORT "8000"
+#define WEB_SERVER "example.com" //"0.0.0.0"
+#define WEB_PORT "80"
 #define WEB_PATH "/"
 
 static const char *TAG = "example";

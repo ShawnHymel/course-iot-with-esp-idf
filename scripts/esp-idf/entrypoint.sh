@@ -6,6 +6,8 @@
 # Set global environment variables
 source /etc/environment
 export IDF_COMPILER_PATH
+export XTENSA_C_COMPILER_PATH=$(whereis -b xtensa-esp-elf-gcc | cut -d ' ' -f2)
+export XTENSA_CPP_COMPILER_PATH=$(whereis -b xtensa-esp-elf-g++ | cut -d ' ' -f2)
 
 # Copy the C/C++ extension configuration
 mkdir -p /workspace/.vscode

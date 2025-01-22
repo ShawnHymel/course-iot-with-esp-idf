@@ -1,7 +1,7 @@
 {
     "configurations": [
         {
-            "name": "ESP-IDF",
+            "name": "ESP-IDF C",
             "includePath": [
                 "/workspace/**",
                 "/opt/toolchains/esp-idf/components/**"
@@ -9,7 +9,21 @@
             "defines": [
                 "ESP_PLATFORM"
             ],
-            "compilerPath": "${env:IDF_COMPILER_PATH}",
+            "compilerPath": "${env:XTENSA_C_COMPILER_PATH}",
+            "intelliSenseMode": "gcc-x64",
+            "cStandard": "c99",
+            "cppStandard": "c++11"
+        },
+        {
+            "name": "ESP-IDF C++",
+            "includePath": [
+                "/workspace/**",
+                "/opt/toolchains/esp-idf/components/**"
+            ],
+            "defines": [
+                "ESP_PLATFORM"
+            ],
+            "compilerPath": "${env:XTENSA_CPP_COMPILER_PATH}",
             "intelliSenseMode": "gcc-x64",
             "cStandard": "c99",
             "cppStandard": "c++11"

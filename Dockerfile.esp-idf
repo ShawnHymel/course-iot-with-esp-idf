@@ -179,10 +179,17 @@ RUN echo "IDF_TOOLS_PATH=${IDF_TOOLS_PATH}" >> /etc/environment && \
 # Copy VS Code settings to ESP-IDF workspace so we don't get submodule warnings
 COPY scripts/esp-idf/settings.json /opt/toolchains/esp-idf/.vscode/settings.json
 
-# Add alias to bashrc
+# Add alias to bashrc and enable environment on terminal open
 RUN echo "alias get_idf='. /opt/toolchains/esp-idf/export.sh'" >> /root/.bashrc && \
     echo "get_idf" >> /root/.bashrc
 
+# Add paths to C and C++ compilers (for IntelliSense)
+RUN /bin/bash -c "source /opt/toolchains/esp-idf/export.sh && \
+    XTENSA_C_COMPILER_PATH=\$(whereis -b xtensa-esp-elf-gcc | cut -d ' ' -f2) && \
+    XTENSA_CPP_COMPILER_PATH=\$(whereis -b xtensa-esp-elf-g++ | cut -d ' ' -f2) && \
+    echo \"export XTENSA_C_COMPILER_PATH=\$XTENSA_C_COMPILER_PATH\" >> /root/.bashrc && \
+    echo \"export XTENSA_CPP_COMPILER_PATH=\$XTENSA_CPP_COMPILER_PATH\" >> /root/.bashrc"
+    
 # Custom entrypoint
 COPY scripts/esp-idf/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
