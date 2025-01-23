@@ -33,7 +33,7 @@ menu "Example Configuration"
             password identifier for SAE H2E
 
     config ESP_RECONNECT_DELAY_SEC
-        int "WiFi retry delay"
+        int "WiFi retry delay (sec)"
         default 10
         help
             Number of seconds to wait before retrying a disconnected WiFi
