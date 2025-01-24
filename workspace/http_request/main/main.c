@@ -27,11 +27,12 @@ static const char *REQUEST = "GET " WEB_PATH " HTTP/1.0\r\n"
     "User-Agent: esp-idf/1.0 esp32\r\n"
     "\r\n";
 
-// Log level for this file
-#define LOG_LEVEL ESP_LOG_VERBOSE
-
-// Set IPv4 or IPv6 family (AF_INET or AF_INET6)
-#define FAMILY AF_INET6
+// Settings
+#define LOG_LEVEL           ESP_LOG_VERBOSE                 // Set log level
+#define WEB_FAMILY          AF_INET                         // Set IPv4 or IPv6 family (AF_INET or AF_INET6)
+#define SOCKET_TIMEOUT_SEC  5                               // Set socket timeout in seconds
+#define RECONNECT_DELAY_SEC CONFIG_ESP_RECONNECT_DELAY_SEC  // Set delay to reconnect in seconds
+#define RX_BUF_SIZE         64                              // Set receive buffer size (bytes)
 
 // Tag for debug messages
 static const char *TAG = "http_request";
@@ -54,8 +55,8 @@ static void wifi_event_handler(void* arg,
         xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
         ESP_LOGI(TAG, 
                  "WiFi disconnected. Waiting %i seconds to reconnect.", 
-                  CONFIG_ESP_RECONNECT_DELAY_SEC);
-        vTaskDelay((CONFIG_ESP_RECONNECT_DELAY_SEC * 1000) / portTICK_PERIOD_MS);
+                  RECONNECT_DELAY_SEC);
+        vTaskDelay((RECONNECT_DELAY_SEC * 1000) / portTICK_PERIOD_MS);
         ESP_LOGI(TAG, "Reconnecting to %s...", ESP_WIFI_SSID);
         esp_wifi_connect();
 
@@ -184,7 +185,7 @@ esp_err_t dns_lookup(const char *host,
     }
 
     // Copy first resolved IP address to output struct
-    if (ip_addr && res) {
+    if (res && ip_addr) {
         memcpy(ip_addr, res, sizeof(struct addrinfo));
     }
 
@@ -194,96 +195,28 @@ esp_err_t dns_lookup(const char *host,
     return ESP_OK;
 }
 
-static void http_get_task(void *pvParameters)
-{
-    const struct addrinfo hints = {
-        .ai_family = AF_INET,
-        .ai_socktype = SOCK_STREAM,
-    };
-    struct addrinfo *res;
-    struct in_addr *addr;
-    int s, r;
-    char recv_buf[64];
-
-    while(1) {
-        int err = getaddrinfo(WEB_HOST, WEB_PORT, &hints, &res);
-
-        if(err != 0 || res == NULL) {
-            ESP_LOGE(TAG, "DNS lookup failed err=%d res=%p", err, res);
-            vTaskDelay(1000 / portTICK_PERIOD_MS);
-            continue;
-        }
-
-        /* Code to print the resolved IP.
-
-           Note: inet_ntoa is non-reentrant, look at ipaddr_ntoa_r for "real" code */
-        addr = &((struct sockaddr_in *)res->ai_addr)->sin_addr;
-        ESP_LOGI(TAG, "DNS lookup succeeded. IP=%s", inet_ntoa(*addr));
-
-        s = socket(res->ai_family, res->ai_socktype, 0);
-        if(s < 0) {
-            ESP_LOGE(TAG, "... Failed to allocate socket.");
-            freeaddrinfo(res);
-            vTaskDelay(1000 / portTICK_PERIOD_MS);
-            continue;
-        }
-        ESP_LOGI(TAG, "... allocated socket");
-
-        if(connect(s, res->ai_addr, res->ai_addrlen) != 0) {
-            ESP_LOGE(TAG, "... socket connect failed errno=%d", errno);
-            close(s);
-            freeaddrinfo(res);
-            vTaskDelay(4000 / portTICK_PERIOD_MS);
-            continue;
-        }
-
-        ESP_LOGI(TAG, "... connected");
-        freeaddrinfo(res);
-
-        if (write(s, REQUEST, strlen(REQUEST)) < 0) {
-            ESP_LOGE(TAG, "... socket send failed");
-            close(s);
-            vTaskDelay(4000 / portTICK_PERIOD_MS);
-            continue;
-        }
-        ESP_LOGI(TAG, "... socket send success");
-
-        struct timeval receiving_timeout;
-        receiving_timeout.tv_sec = 5;
-        receiving_timeout.tv_usec = 0;
-        if (setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &receiving_timeout,
-                sizeof(receiving_timeout)) < 0) {
-            ESP_LOGE(TAG, "... failed to set socket receiving timeout");
-            close(s);
-            vTaskDelay(4000 / portTICK_PERIOD_MS);
-            continue;
-        }
-        ESP_LOGI(TAG, "... set socket receiving timeout success");
-
-        /* Read HTTP response */
-        do {
-            bzero(recv_buf, sizeof(recv_buf));
-            r = read(s, recv_buf, sizeof(recv_buf)-1);
-            for(int i = 0; i < r; i++) {
-                putchar(recv_buf[i]);
-            }
-        } while(r > 0);
-
-        ESP_LOGI(TAG, "... done reading from socket. Last read return=%d errno=%d.", r, errno);
-        close(s);
-        for(int countdown = 10; countdown >= 0; countdown--) {
-            ESP_LOGI(TAG, "%d... ", countdown);
-            vTaskDelay(1000 / portTICK_PERIOD_MS);
-        }
-        ESP_LOGI(TAG, "Starting again!");
-    }
-}
-
 // Main app entrypoint
 void app_main(void)
 {
-    esp_err_t ret;
-    struct addrinfo ip_addr;
+    esp_err_t esp_ret;
+    int ret;
+    struct addrinfo *dns_res;
+    int sock;
+    char recv_buf[RX_BUF_SIZE];
+    uint32_t recv_total;
+    ssize_t recv_len;
+
+    // Hints for DNS lookup
+    struct addrinfo hints = {
+        .ai_family = WEB_FAMILY,
+        .ai_socktype = SOCK_STREAM
+    };
+
+    // Socket timeout
+    struct timeval sock_timeout = {
+        .tv_sec = SOCKET_TIMEOUT_SEC,
+        .tv_usec = 0
+    };
 
     // Set log levels
     esp_log_level_set("wifi", LOG_LEVEL);
@@ -294,36 +227,354 @@ void app_main(void)
     ESP_LOGI(TAG, "Starting HTTP GET request demo");
 
     // Initialize NVS: ESP32 WiFi driver uses NVS to store WiFi settings
-    ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    esp_ret = nvs_flash_init();
+    if (esp_ret == ESP_ERR_NVS_NO_FREE_PAGES || esp_ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
       ESP_ERROR_CHECK(nvs_flash_erase());
-      ret = nvs_flash_init();
+      esp_ret = nvs_flash_init();
     }
-    ESP_ERROR_CHECK(ret);
+    ESP_ERROR_CHECK(esp_ret);
 
     // Initialize WiFi in station mode
     wifi_init_sta();
 
-    // Create task to perform HTTP GET request
-    // xTaskCreate(&http_get_task, "http_get_task", 4096, NULL, 5, NULL);
-
-    // Perform DNS lookup
-    ret = dns_lookup(WEB_HOST, WEB_PORT, FAMILY, &ip_addr);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "DNS lookup failed");
-        return;
-    }
-
-    // Create task to perform HTTP GET request
-
-    // TODO:
-    // - DNS lookup function
-    // - HTTP GET request function
-
-    // Superloop: do nothing
+    // Do forever: perform HTTP GET request
     while (1) {
+
+        // MY DNS LOOKUP
+
+        // // Perform DNS lookup
+        // ret = dns_lookup(WEB_HOST, WEB_PORT, WEB_FAMILY, &ip_addr);
+        // if (ret != ESP_OK) {
+        //     ESP_LOGE(TAG, "DNS lookup failed");
+        //     continue;
+        // }
+
+        // END MY DNS LOOKUP
+
+        // // Print resolved IP address
+        // if (ip_addr.ai_family == AF_INET) {
+        //     struct in_addr *ip = &((struct sockaddr_in *)ip_addr.ai_addr)->sin_addr;
+        //     inet_ntop(AF_INET, ip, recv_buf, INET_ADDRSTRLEN);
+        //     ESP_LOGI(TAG, "Resolved IP address: %s", recv_buf);
+        // }
+        // else if (ip_addr.ai_family == AF_INET6) {
+        //     struct in6_addr *ip = &((struct sockaddr_in6 *)ip_addr.ai_addr)->sin6_addr;
+        //     inet_ntop(AF_INET6, ip, recv_buf, INET6_ADDRSTRLEN);
+        //     ESP_LOGI(TAG, "Resolved IP address: %s", recv_buf);
+        // }
+
+        // TEST: Perform DNS lookup
+
+        // Perform DNS lookup
+        ret = getaddrinfo(WEB_HOST, WEB_PORT, &hints, &dns_res);
+        if (ret != 0 || dns_res== NULL) {
+            ESP_LOGE(TAG, "DNS lookup failed (%d)", ret);
+            continue;
+        }
+
+        // Print resolved IP addresses
+        ESP_LOGI(TAG, "DNS lookup succeeded. IP addresses:");
+        for (struct addrinfo *addr = dns_res; addr != NULL; addr = addr->ai_next) {
+            if (addr->ai_family == AF_INET) {
+                struct in_addr *ip = &((struct sockaddr_in *)addr->ai_addr)->sin_addr;
+                inet_ntop(AF_INET, ip, recv_buf, INET_ADDRSTRLEN);
+                ESP_LOGI(TAG, "  IPv4: %s", recv_buf);
+            } else if (addr->ai_family == AF_INET6) {
+                struct in6_addr *ip = &((struct sockaddr_in6 *)addr->ai_addr)->sin6_addr;
+                inet_ntop(AF_INET6, ip, recv_buf, INET6_ADDRSTRLEN);
+                ESP_LOGI(TAG, "  IPv6: %s", recv_buf);
+            }
+        }
+
+        // // Print all resolved IP addresses
+        // ESP_LOGI(TAG, "DNS lookup succeeded. IP addresses:");
+        // for (struct addrinfo *addr = ip_addr; addr != NULL; addr = addr->ai_next) {
+        //     if (addr->ai_family == AF_INET) {
+        //         struct in_addr *ip = &((struct sockaddr_in *)addr->ai_addr)->sin_addr;
+        //         inet_ntop(AF_INET, ip, ip_str, INET_ADDRSTRLEN);
+        //         ESP_LOGI(TAG, "  IPv4: %s", ip_str);
+        //     } else if (addr->ai_family == AF_INET6) {
+        //         struct in6_addr *ip = &((struct sockaddr_in6 *)addr->ai_addr)->sin6_addr;
+        //         inet_ntop(AF_INET6, ip, ip_str, INET6_ADDRSTRLEN);
+        //         ESP_LOGI(TAG, "  IPv6: %s", ip_str);
+        //     }
+        // }
+
+        // const struct addrinfo hints = {
+        //     .ai_family = AF_INET,
+        //     .ai_socktype = SOCK_STREAM,
+        // };
+        // struct addrinfo *res;
+        // int err = getaddrinfo(WEB_HOST, WEB_PORT, &hints, &res);
+        // if(err != 0 || res == NULL) {
+        //     ESP_LOGE(TAG, "DNS lookup failed err=%d res=%p", err, res);
+        //     vTaskDelay(1000 / portTICK_PERIOD_MS);
+        //     continue;
+        // }
+
+        // // Copy first resolved IP address to output struct
+        // if (res) {
+        //     memcpy(&ip_addr, res, sizeof(struct addrinfo));
+        // }
+
+        // END TEST
+        
+        // // Print resolved IP addresses (linked list)
+        // char ip_str[INET6_ADDRSTRLEN] = {0};
+        // ESP_LOGI(TAG, "DNS lookup succeeded. IP addresses:");
+        // for (struct addrinfo *addr = res; addr != NULL; addr = addr->ai_next) {
+        //     if (addr->ai_family == AF_INET) {
+        //         struct in_addr *ip = &((struct sockaddr_in *)addr->ai_addr)->sin_addr;
+        //         inet_ntop(AF_INET, ip, ip_str, INET_ADDRSTRLEN);
+        //         ESP_LOGI(TAG, "  IPv4: %s", ip_str);
+        //     }
+        //     else if (addr->ai_family == AF_INET6) {
+        //         struct in6_addr *ip = &((struct sockaddr_in6 *)addr->ai_addr)->sin6_addr;
+        //         inet_ntop(AF_INET6, ip, ip_str, INET6_ADDRSTRLEN);
+        //         ESP_LOGI(TAG, "  IPv6: %s", ip_str);
+        //     }
+        // }
+
+        // Print resolved IP address, family, and port
+        if (dns_res->ai_family == AF_INET) {
+            struct sockaddr_in *addr_in = (struct sockaddr_in *)dns_res->ai_addr;
+            // addr_in->sin_port = htons(atoi(WEB_PORT));
+            ESP_LOGI(TAG, "IPv4 Address: %s", inet_ntoa(addr_in->sin_addr));
+            ESP_LOGI(TAG, "  Port: %d", ntohs(addr_in->sin_port));
+            ESP_LOGI(TAG, "  Family: %d", dns_res->ai_family);
+            ESP_LOGI(TAG, "  Socktype: %d", dns_res->ai_socktype);
+            ESP_LOGI(TAG, "  Protocol: %d", dns_res->ai_protocol);
+            ESP_LOGI(TAG, "  Addrlen: %lu", (uint32_t)dns_res->ai_addrlen);
+        } else if (dns_res->ai_family == AF_INET6) {
+            struct sockaddr_in6 *addr_in6 = (struct sockaddr_in6 *)dns_res->ai_addr;
+            // addr_in6->sin6_port = htons(atoi(WEB_PORT));
+            char ip_str[INET6_ADDRSTRLEN];
+            inet_ntop(AF_INET6, &addr_in6->sin6_addr, ip_str, sizeof(ip_str));
+            ESP_LOGI(TAG, "IPv6 Address: %s", ip_str);
+            ESP_LOGI(TAG, "  Port: %d", ntohs(addr_in6->sin6_port));
+            ESP_LOGI(TAG, "  Family: %d", dns_res->ai_family);
+            ESP_LOGI(TAG, "  Socktype: %d", dns_res->ai_socktype);
+            ESP_LOGI(TAG, "  Protocol: %d", dns_res->ai_protocol);
+            ESP_LOGI(TAG, "  Addrlen: %lu", (uint32_t)dns_res->ai_addrlen);
+        }
+
+        // sock = socket(res->ai_family, res->ai_socktype, 0);
+        // if(sock < 0) {
+        //     ESP_LOGE(TAG, "... Failed to allocate socket.");
+        //     vTaskDelay(1000 / portTICK_PERIOD_MS);
+        //     continue;
+        // }
+        // ESP_LOGI(TAG, "... allocated socket");
+
+        // if(connect(sock, res->ai_addr, res->ai_addrlen) != 0) {
+        //     ESP_LOGE(TAG, "... socket connect failed errno=%d", errno);
+        //     close(sock);
+        //     vTaskDelay(4000 / portTICK_PERIOD_MS);
+        //     continue;
+        // }
+
+        // ESP_LOGI(TAG, "... connected");
+
+        // if (write(sock, REQUEST, strlen(REQUEST)) < 0) {
+        //     ESP_LOGE(TAG, "... socket send failed");
+        //     close(sock);
+        //     vTaskDelay(4000 / portTICK_PERIOD_MS);
+        //     continue;
+        // }
+        // ESP_LOGI(TAG, "... socket send success");
+
+        // struct timeval receiving_timeout;
+        // receiving_timeout.tv_sec = 5;
+        // receiving_timeout.tv_usec = 0;
+        // if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &receiving_timeout,
+        //         sizeof(receiving_timeout)) < 0) {
+        //     ESP_LOGE(TAG, "... failed to set socket receiving timeout");
+        //     close(sock);
+        //     vTaskDelay(4000 / portTICK_PERIOD_MS);
+        //     continue;
+        // }
+        // ESP_LOGI(TAG, "... set socket receiving timeout success");
+
+        // /* Read HTTP response */
+        // do {
+        //     bzero(recv_buf, sizeof(recv_buf));
+        //     recv_len = read(sock, recv_buf, sizeof(recv_buf)-1);
+        //     for(int i = 0; i < recv_len; i++) {
+        //         putchar(recv_buf[i]);
+        //     }
+        // } while(recv_len > 0);
+
+        // ESP_LOGI(TAG, "... done reading from socket. Last read return=%d errno=%d.", recv_len, errno);
+        // close(sock);
+
+        // // Add port to the address
+        // if (ip_addr.ai_family == AF_INET) {
+        //     struct sockaddr_in *addr_in = (struct sockaddr_in *)ip_addr.ai_addr;
+        //     addr_in->sin_port = htons(atoi(WEB_PORT));
+        //     ESP_LOGI(TAG, "IPv4 Address: %s, Port: %d",
+        //             inet_ntoa(addr_in->sin_addr), ntohs(addr_in->sin_port));
+        // } else if (ip_addr.ai_family == AF_INET6) {
+        //     struct sockaddr_in6 *addr_in6 = (struct sockaddr_in6 *)ip_addr.ai_addr;
+        //     addr_in6->sin6_port = htons(atoi(WEB_PORT));
+        //     char ip_str[INET6_ADDRSTRLEN];
+        //     inet_ntop(AF_INET6, &addr_in6->sin6_addr, ip_str, sizeof(ip_str));
+        //     ESP_LOGI(TAG, "IPv6 Address: %s, Port: %d", ip_str, ntohs(addr_in6->sin6_port));
+        // }
+
+        // Create a socket
+        sock = socket(dns_res->ai_family, dns_res->ai_socktype, dns_res->ai_protocol);
+        if (sock < 0) {
+            ESP_LOGE(TAG, "Failed to create socket (%d): %s", errno, strerror(errno));
+            continue;
+        }
+
+        // Set socket send timeout
+        ret = setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &sock_timeout, sizeof(sock_timeout));
+        if (ret < 0) {
+            ESP_LOGE(TAG, "Failed to set socket send timeout (%d): %s", errno, strerror(errno));
+            close(sock);
+            continue;
+        }
+
+        // Set socket receive timeout
+        ret = setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &sock_timeout, sizeof(sock_timeout));
+        if (ret < 0) {
+            ESP_LOGE(TAG, "Failed to set socket receive timeout (%d): %s", errno, strerror(errno));
+            close(sock);
+            continue;
+        }
+
+        // Connect to server
+        ret = connect(sock, dns_res->ai_addr, dns_res->ai_addrlen);
+        if (ret < 0) {
+            ESP_LOGE(TAG, "Failed to connect to server (%d): %s", errno, strerror(errno));
+            close(sock);
+            continue;
+        }
+
+        // Delete the address info
+        freeaddrinfo(dns_res);
+
+        // Send HTTP GET request
+        ESP_LOGI(TAG, "Sending HTTP GET request...");
+        ret = send(sock, REQUEST, strlen(REQUEST), 0);
+        if (ret < 0) {
+            ESP_LOGE(TAG, "Failed to send HTTP GET request (%d): %s", errno, strerror(errno));
+            close(sock);
+            continue;
+        }
+
+        // Print the HTTP response
+        ESP_LOGI(TAG, "HTTP response:");
+        recv_total = 0;
+        while (1) {
+
+            // Receive data from the socket
+            recv_len = recv(sock, recv_buf, sizeof(recv_buf) - 1, 0);
+
+            // Check for errors
+            if (recv_len < 0) {
+                ESP_LOGE(TAG, "Failed to receive data (%d): %s", errno, strerror(errno));
+                break;
+            }
+
+            // Check for end of data
+            if (recv_len == 0) {
+                break;
+            }
+
+            // Null-terminate the received data and print it
+            recv_buf[recv_len] = '\0';
+            printf("%s", recv_buf);
+            recv_total += (uint32_t)recv_len;
+        }
+
+        // Close the socket
+        close(sock);
+
+        // // Add port to the address
+        // if (ip_addr.ai_family == AF_INET) {
+        //     struct sockaddr_in *addr_in = (struct sockaddr_in *)ip_addr.ai_addr;
+        //     addr_in->sin_port = htons(atoi(WEB_PORT));
+        //     ESP_LOGI(TAG, "IPv4 Address: %s, Port: %d",
+        //             inet_ntoa(addr_in->sin_addr), ntohs(addr_in->sin_port));
+        // } else if (ip_addr.ai_family == AF_INET6) {
+        //     struct sockaddr_in6 *addr_in6 = (struct sockaddr_in6 *)ip_addr.ai_addr;
+        //     addr_in6->sin6_port = htons(atoi(WEB_PORT));
+        //     char ip_str[INET6_ADDRSTRLEN];
+        //     inet_ntop(AF_INET6, &addr_in6->sin6_addr, ip_str, sizeof(ip_str));
+        //     ESP_LOGI(TAG, "IPv6 Address: %s, Port: %d", ip_str, ntohs(addr_in6->sin6_port));
+        // }
+
+        // // Create a socket
+        // sock = socket(ip_addr.ai_family, ip_addr.ai_socktype, ip_addr.ai_protocol);
+        // if (sock < 0) {
+        //     ESP_LOGE(TAG, "Failed to create socket (%d): %s", errno, strerror(errno));
+        //     continue;
+        // }
+
+        // // Set socket receive timeout
+        // sock_ret = setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &sock_timeout, sizeof(sock_timeout));
+        // if (sock_ret < 0) {
+        //     ESP_LOGE(TAG, "Failed to set socket receive timeout (%d): %s", errno, strerror(errno));
+        //     close(sock);
+        //     continue;
+        // }
+
+        // // Set socket send timeout
+        // sock_ret = setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &sock_timeout, sizeof(sock_timeout));
+        // if (sock_ret < 0) {
+        //     ESP_LOGE(TAG, "Failed to set socket send timeout (%d): %s", errno, strerror(errno));
+        //     close(sock);
+        //     continue;
+        // }
+
+        // // Connect to server
+        // sock_ret = connect(sock, ip_addr.ai_addr, ip_addr.ai_addrlen);
+        // if (sock_ret < 0) {
+        //     ESP_LOGE(TAG, "Failed to connect to server (%d): %s", errno, strerror(errno));
+        //     close(sock);
+        //     continue;
+        // }
+
+        // // Send HTTP GET request
+        // ESP_LOGI(TAG, "Sending HTTP GET request...");
+        // sock_ret = send(sock, REQUEST, strlen(REQUEST), 0);
+        // if (sock_ret < 0) {
+        //     ESP_LOGE(TAG, "Failed to send HTTP GET request (%d): %s", errno, strerror(errno));
+        //     close(sock);
+        //     continue;
+        // }
+
+        // // Print the HTTP response
+        // ESP_LOGI(TAG, "HTTP response:");
+        // recv_total = 0;
+        // while (1) {
+
+        //     // Receive data from the socket
+        //     recv_len = recv(sock, recv_buf, sizeof(recv_buf) - 1, 0);
+
+        //     // Check for errors
+        //     if (recv_len < 0) {
+        //         ESP_LOGE(TAG, "Failed to receive data (%d): %s", errno, strerror(errno));
+        //         break;
+        //     }
+
+        //     // Check for end of data
+        //     if (recv_len == 0) {
+        //         break;
+        //     }
+
+        //     // Null-terminate the received data and print it
+        //     recv_buf[recv_len] = '\0';
+        //     printf("%s", recv_buf);
+        //     recv_total += (uint32_t)sock_ret;
+        // }
+
+        // // Close the socket
+        // close(sock);
+
+        // Wait before trying again
         vTaskDelay(5000 / portTICK_PERIOD_MS);
-        // ESP_LOGI(TAG, "Disconnecting from AP...");
-        // esp_wifi_disconnect();
     }
 }
