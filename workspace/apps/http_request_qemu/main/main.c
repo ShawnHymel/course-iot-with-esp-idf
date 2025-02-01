@@ -250,16 +250,16 @@ void app_main(void)
     }
     ESP_ERROR_CHECK(esp_ret);
 
+    // Initialize TCP/IP network interface (only call once in application)
+    // Must be called prior to initializing Ethernet!
+    esp_ret = esp_netif_init();
+    ESP_ERROR_CHECK(esp_ret);
+
     // Create default event loop that runs in the background
     // Must be running prior to initializing Ethernet!
     esp_ret = esp_event_loop_create_default();
     ESP_ERROR_CHECK(esp_ret);
 
-    // Initialize TCP/IP network interface (only call once in application)
-    // Must be called prior to initializing Ethernet!
-    esp_ret = esp_netif_init();
-    ESP_ERROR_CHECK(esp_ret);
-    
     // Initialize virtual Ethernet (for QEMU)
     esp_ret = init_qemu_eth();
     ESP_ERROR_CHECK(esp_ret);
