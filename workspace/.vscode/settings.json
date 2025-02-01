@@ -2,6 +2,9 @@
     "cmake.ignoreCMakeListsMissing": true,
     "files.associations": {
         "esp_event.h": "c",
-        "cstdlib": "c"
+        "cstdlib": "c",
+        "esp_eth.h": "c",
+        "esp_eth_driver.h": "c",
+        "esp_eth_mac_openeth.h": "c"
     }
 }
