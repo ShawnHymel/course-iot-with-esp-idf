@@ -1,6 +1,7 @@
 {
     "cmake.ignoreCMakeListsMissing": true,
     "files.associations": {
-        "esp_event.h": "c"
+        "esp_event.h": "c",
+        "cstdlib": "c"
     }
 }
