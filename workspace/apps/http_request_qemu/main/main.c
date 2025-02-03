@@ -27,7 +27,7 @@ static const char *REQUEST = "GET " WEB_PATH " HTTP/1.0\r\n"
 
 // Settings
 #define LOG_LEVEL               ESP_LOG_VERBOSE                 // Set log level
-#define WEB_FAMILY              AF_INET                         // Set IPv4 or IPv6 family (AF_INET or AF_INET6)
+#define WEB_FAMILY              AF_INET6                         // Set IPv4 or IPv6 family (AF_INET, AF_INET6, AF_UNSPEC)
 #define SOCKET_TIMEOUT_SEC      5                               // Set socket timeout in seconds
 #define RECONNECT_DELAY_SEC     CONFIG_ESP_RECONNECT_DELAY_SEC  // Set delay to reconnect in seconds
 #define RX_BUF_SIZE             64                              // Set receive buffer size (bytes)
@@ -46,7 +46,7 @@ esp_err_t wait_for_connection(void)
 
         // Wait for Ethernet to connect and get an IP address
         for (int i = 0; i < WAIT_FOR_CONNECTION_SEC; i++) {
-            if (eth_qemu_is_connected() && eth_qemu_has_ip_addr()) {
+            if (eth_qemu_is_connected() && eth_qemu_has_ip6_addr()) {
                 return ESP_OK;
             }
             ESP_LOGI(TAG, "Waiting for Ethernet to connect...");

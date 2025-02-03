@@ -61,6 +61,10 @@ static void on_eth_event(void *arg,
                      mac_addr[3], 
                      mac_addr[4], 
                      mac_addr[5]);
+
+            // %%%TEST: IPv6
+            ESP_ERROR_CHECK(esp_netif_create_ip6_linklocal(s_eth_netif));
+
             break;
         
         // Print message when disconnected
@@ -98,12 +102,21 @@ static void on_got_ip_event(void *arg,
 
         // Print IP address
         case IP_EVENT_ETH_GOT_IP:
-            ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
-            esp_netif_ip_info_t *ip_info = &event->ip_info;
-            ESP_LOGI(TAG, "Ethernet IP address obtained");
+            ip_event_got_ip_t *event_ip = (ip_event_got_ip_t *)event_data;
+            esp_netif_ip_info_t *ip_info = &event_ip->ip_info;
+            ESP_LOGI(TAG, "Ethernet IPv4 address obtained");
             ESP_LOGI(TAG, "  IP address:" IPSTR, IP2STR(&ip_info->ip));
             ESP_LOGI(TAG, "  Netmask:" IPSTR, IP2STR(&ip_info->netmask));
             ESP_LOGI(TAG, "  Gateway:" IPSTR, IP2STR(&ip_info->gw));
+            break;
+
+        // %%%TEST: IPv6
+        // Print IPv6 address
+        case IP_EVENT_GOT_IP6:
+            ip_event_got_ip6_t *event_ipv6 = (ip_event_got_ip6_t *)event_data;
+            esp_netif_ip6_info_t *ip6_info = &event_ipv6->ip6_info;
+            ESP_LOGI(TAG, "Ethernet IPv6 address obtained");
+            ESP_LOGI(TAG, "  IP address: " IPV6STR, IPV62STR(ip6_info->ip));
             break;
 
         // Notify if lost IP address
@@ -134,6 +147,14 @@ bool eth_qemu_has_ip_addr(void)
     esp_netif_ip_info_t ip_info;
     esp_netif_get_ip_info(s_eth_netif, &ip_info);
     return ip_info.ip.addr != 0;
+}
+
+// Check if we have an IPv6 address on the Ethernet interface
+bool eth_qemu_has_ip6_addr(void)
+{
+    esp_ip6_addr_t ip6_info;
+    esp_netif_get_ip6_linklocal(s_eth_netif, &ip6_info);
+    return ip6_info.addr[0] != 0;
 }
 
 // Initialize QEMU virtual Ethernet
@@ -201,9 +222,26 @@ esp_err_t eth_qemu_init(void)
         return esp_ret;
     }
 
-    // Register IP event handler
+    // %%%TEST: IPv6
+    // Register IP event handlers
     esp_ret = esp_event_handler_register(IP_EVENT, 
-                                         IP_EVENT_ETH_GOT_IP, 
+                                         IP_EVENT_ETH_GOT_IP,
+                                         &on_got_ip_event, 
+                                         NULL);
+    if (esp_ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to register IP event handler");
+        return esp_ret;
+    }
+    esp_ret = esp_event_handler_register(IP_EVENT, 
+                                         IP_EVENT_GOT_IP6,
+                                         &on_got_ip_event, 
+                                         NULL);
+    if (esp_ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to register IP event handler");
+        return esp_ret;
+    }
+    esp_ret = esp_event_handler_register(IP_EVENT, 
+                                         IP_EVENT_ETH_LOST_IP, 
                                          &on_got_ip_event, 
                                          NULL);
     if (esp_ret != ESP_OK) {
@@ -229,14 +267,21 @@ esp_err_t eth_qemu_stop(void)
     ESP_LOGI(TAG, "Stopping Ethernet...");
 
     // Unregister Ethernet event handlers
-    esp_ret = esp_event_handler_unregister(ETH_EVENT, ESP_EVENT_ANY_ID, &on_eth_event);
+    esp_ret = esp_event_handler_unregister(ETH_EVENT, 
+                                           ESP_EVENT_ANY_ID, 
+                                           &on_eth_event);
     if (esp_ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to unregister Ethernet event handler");
         return esp_ret;
     }
 
+    // %%%TEST: IPv6
     // Unregister IP event handler
-    esp_ret = esp_event_handler_unregister(IP_EVENT, IP_EVENT_ETH_GOT_IP, &on_got_ip_event);
+    esp_ret = esp_event_handler_unregister(IP_EVENT, 
+                                           IP_EVENT_ETH_GOT_IP | 
+                                              IP_EVENT_GOT_IP6 | 
+                                              IP_EVENT_ETH_LOST_IP,
+                                           &on_got_ip_event);
     if (esp_ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to unregister IP event handler");
         return esp_ret;

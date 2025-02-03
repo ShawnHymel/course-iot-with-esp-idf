@@ -5,6 +5,7 @@
 
 bool eth_qemu_is_connected(void);
 bool eth_qemu_has_ip_addr(void);
+bool eth_qemu_has_ip6_addr(void);
 esp_err_t eth_qemu_init(void);
 esp_err_t eth_qemu_stop(void);
 esp_err_t eth_qemu_reconnect(void);

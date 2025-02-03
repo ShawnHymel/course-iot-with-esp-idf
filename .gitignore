@@ -3,7 +3,6 @@
 **/venv/
 **/sdkconfig
 **/sdkconfig.old
-**/sdkconfig.defaults
 **/sdkconfig.bak
 **/sdkconfig.projbuild
 **/sdkconfig.projbuild.old
