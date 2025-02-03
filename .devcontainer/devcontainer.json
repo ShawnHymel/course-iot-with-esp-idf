@@ -20,7 +20,9 @@
     // "postStartCommand": "code /esp-idf.code-workspace",
     "runArgs": [
         "--rm",
-        "-it"
+        "-it",
+        "--network",
+        "ip6net"
     ],
     "remoteUser": "root"
 }

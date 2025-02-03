@@ -24,7 +24,7 @@ static const char *REQUEST = "GET " WEB_PATH " HTTP/1.0\r\n"
 
 // Settings
 #define LOG_LEVEL           ESP_LOG_VERBOSE                 // Set log level
-#define WEB_FAMILY          AF_INET                         // Set IPv4 or IPv6 family (AF_INET or AF_INET6)
+#define WEB_FAMILY          AF_INET6                         // Set IPv4 or IPv6 family (AF_INET or AF_INET6)
 #define SOCKET_TIMEOUT_SEC  5                               // Set socket timeout in seconds
 #define RECONNECT_DELAY_SEC CONFIG_ESP_RECONNECT_DELAY_SEC  // Set delay to reconnect in seconds
 #define RX_BUF_SIZE         64                              // Set receive buffer size (bytes)
@@ -104,6 +104,9 @@ static void on_wifi_event(void *arg,
                     }
                 }
                 esp_netif_action_connected(s_wifi_netif, event_base, event_id, event_data);
+
+                // %%%TEST: IPv6
+                esp_netif_create_ip6_linklocal(s_wifi_netif);
             }
             break;
 
@@ -143,9 +146,6 @@ static void on_ip_event(void *arg,
                 ESP_LOGI(TAG, "  IP address: " IPSTR, IP2STR(&event_ip->ip_info.ip));
                 ESP_LOGI(TAG, "  Netmask: " IPSTR, IP2STR(&event_ip->ip_info.netmask));
                 ESP_LOGI(TAG, "  Gateway: " IPSTR, IP2STR(&event_ip->ip_info.gw));
-
-                // Notify that WiFi is connected
-                xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
             }
             break;
 
@@ -153,6 +153,10 @@ static void on_ip_event(void *arg,
         case IP_EVENT_GOT_IP6:
             ip_event_got_ip6_t *event_ip6 = (ip_event_got_ip6_t *)event_data;
             ESP_LOGI(TAG, "Got IPv6 address: " IPV6STR, IPV62STR(event_ip6->ip6_info.ip));
+
+            // Notify that WiFi is connected
+            xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+
             break;
     }
 }
@@ -247,6 +251,10 @@ esp_err_t wifi_init_sta(void)
     ESP_ERROR_CHECK(esp_ret);
     esp_ret = esp_register_shutdown_handler((shutdown_handler_t)esp_wifi_stop);
     ESP_ERROR_CHECK(esp_ret);
+
+    // %%%TEST: IPv6
+    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_GOT_IP6, &on_ip_event, NULL));
+
 
     //Initialize network interface for WiFi in station mode
     // esp_netif_inherent_config_t esp_netif_config = ESP_NETIF_INHERENT_DEFAULT_WIFI_STA();
