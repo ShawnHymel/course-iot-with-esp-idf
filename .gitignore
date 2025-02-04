@@ -8,4 +8,4 @@
 **/sdkconfig.projbuild.old
 **/sdkconfig.projbuild.defaults
 **/sdkconfig.projbuild.bak
-
+*.lock

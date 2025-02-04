@@ -1,0 +1,46 @@
+menu "Ethernet QEMU Configuration"
+
+    config CONNECT_ETHERNET_QEMU
+        bool "Connect using QEMU's virtual ethernet"
+        default n
+        help
+            Enables the QEMU ethernet driver to connect to your local network.
+
+    if CONNECT_ETHERNET_QEMU
+        choice CONNECT_IP_TYPE
+            prompt "Select IP Type"
+            default ETHERNET_QEMU_CONNECT_IPV4
+            help
+                Choose the IP type to use for the connection (IPv4, IPv6, or 
+                Unspecified).
+
+            config ETHERNET_QEMU_CONNECT_IPV4
+                bool "IPv4"
+                select LWIP_IPV4
+                help
+                    Use only IPv4 for the QEMU Ethernet connection.
+
+            config ETHERNET_QEMU_CONNECT_IPV6
+                bool "IPv6"
+                select LWIP_IPV6
+                help
+                    Use only IPv6 for the Ethernet connection.
+
+            config ETHERNET_QEMU_CONNECT_UNSPECIFIED
+                bool "Either IPv4 or IPv6"
+                select LWIP_IPV4
+                select LWIP_IPV6
+                help
+                    Use either IPv4 or IPv6 for the Ethernet connection.
+
+        endchoice
+    endif
+
+    config ETHERNET_QEMU_AUTO_RECONNECT
+        bool "Automatically attempt reconnect on disconnect"
+        default n
+        help
+            If a disconnect event occurs, automatically attempt to reconnect to
+            the network.
+
+endmenu

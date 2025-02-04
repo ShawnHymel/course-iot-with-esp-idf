@@ -11,9 +11,7 @@
         }
     },
     "forwardPorts": [
-        3333,
-        22001,
-        8800
+        // None, as we are using --network=host
     ],
     "workspaceMount": "source=${localWorkspaceFolder}/workspace,target=/workspace,type=bind,consistency=cached",
     "workspaceFolder": "/workspace",
@@ -21,8 +19,7 @@
     "runArgs": [
         "--rm",
         "-it",
-        "--network",
-        "ip6net"
+        "--network=host"
     ],
     "remoteUser": "root"
 }

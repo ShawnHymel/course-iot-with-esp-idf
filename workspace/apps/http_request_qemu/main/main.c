@@ -27,40 +27,62 @@ static const char *REQUEST = "GET " WEB_PATH " HTTP/1.0\r\n"
 
 // Settings
 #define LOG_LEVEL               ESP_LOG_VERBOSE                 // Set log level
-#define WEB_FAMILY              AF_INET6                         // Set IPv4 or IPv6 family (AF_INET, AF_INET6, AF_UNSPEC)
+// Set IPv4 or IPv6 family (AF_INET, AF_INET6, AF_UNSPEC)
+#if CONFIG_ETHERNET_QEMU_CONNECT_IPV4
+#  define WEB_FAMILY              AF_INET
+#elif CONFIG_ETHERNET_QEMU_CONNECT_IPV6
+#  define WEB_FAMILY              AF_INET6
+#elif CONFIG_ETHERNET_QEMU_CONNECT_UNSPECIFIED
+#  define WEB_FAMILY              AF_UNSPEC
+#else
+#  error "Please select an IP family in menuconfig"
+#endif         
 #define SOCKET_TIMEOUT_SEC      5                               // Set socket timeout in seconds
-#define RECONNECT_DELAY_SEC     CONFIG_ESP_RECONNECT_DELAY_SEC  // Set delay to reconnect in seconds
 #define RX_BUF_SIZE             64                              // Set receive buffer size (bytes)
-#define WAIT_FOR_CONNECTION_SEC 5                               // Set delay to wait for connection in seconds
+#define CONNECTION_TIMEOUT_SEC  5                               // Set delay to wait for connection in seconds
 
 // Tag for debug messages
 static const char *TAG = "http_request";
 
-// Wait for Ethernet to connect and get an IP address
-esp_err_t wait_for_connection(void)
+// Wait for Ethernet to connect
+static bool wait_for_ethernet(EventGroupHandle_t network_event_group)
 {
-    esp_err_t esp_ret;
+    EventBits_t network_event_bits;
 
-    // Try to connect to Ethernet forever
-    while (1) {
-
-        // Wait for Ethernet to connect and get an IP address
-        for (int i = 0; i < WAIT_FOR_CONNECTION_SEC; i++) {
-            if (eth_qemu_is_connected() && eth_qemu_has_ip6_addr()) {
-                return ESP_OK;
-            }
-            ESP_LOGI(TAG, "Waiting for Ethernet to connect...");
-            vTaskDelay(1000 / portTICK_PERIOD_MS);
-        }
-
-        // If we get here, try to reconnect
-        ESP_LOGE(TAG, "Ethernet not connected. Attempting to reconnect...");
-        esp_ret = eth_qemu_reconnect(); 
-        if (esp_ret != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to reconnect Ethernet (%d)", esp_ret);
-            return esp_ret;
-        }
+    // Wait for Ethernet to connect
+    ESP_LOGI(TAG, "Waiting for Ethernet to connect...");
+    network_event_bits = xEventGroupWaitBits(network_event_group, 
+                                             ETHERNET_QEMU_CONNECTED_BIT, 
+                                             pdFALSE, 
+                                             pdTRUE, 
+                                             CONNECTION_TIMEOUT_SEC * 1000 / 
+                                                portTICK_PERIOD_MS);
+    if (network_event_bits & ETHERNET_QEMU_CONNECTED_BIT) {
+        ESP_LOGI(TAG, "Connected to Ethernet");
+    } else {
+        ESP_LOGE(TAG, "Failed to connect to Ethernet");
+        return false;
     }
+
+    // Wait for IP address
+    ESP_LOGI(TAG, "Waiting for IP address...");
+    network_event_bits = xEventGroupWaitBits(network_event_group, 
+                                             ETHERNET_QEMU_IPV4_CONNECTED_BIT | 
+                                             ETHERNET_QEMU_IPV6_CONNECTED_BIT, 
+                                             pdFALSE, 
+                                             pdTRUE, 
+                                             CONNECTION_TIMEOUT_SEC * 1000 / 
+                                                portTICK_PERIOD_MS);
+    if (network_event_bits & ETHERNET_QEMU_IPV4_CONNECTED_BIT) {
+        ESP_LOGI(TAG, "Connected to IPv4 network");
+    } else if (network_event_bits & ETHERNET_QEMU_IPV6_CONNECTED_BIT) {
+        ESP_LOGI(TAG, "Connected to IPv6 network");
+    } else {
+        ESP_LOGE(TAG, "Failed to obtain IP address");
+        return false;
+    }
+
+    return true;
 }
 
 // Main app entrypoint
@@ -73,6 +95,7 @@ void app_main(void)
     char recv_buf[RX_BUF_SIZE];
     uint32_t recv_total;
     ssize_t recv_len;
+    EventGroupHandle_t network_event_group;
 
     // Hints for DNS lookup
     struct addrinfo hints = {
@@ -94,6 +117,9 @@ void app_main(void)
     vTaskDelay(2000 / portTICK_PERIOD_MS);
     ESP_LOGI(TAG, "Starting HTTP GET request demo");
 
+    // Initialize event group
+    network_event_group = xEventGroupCreate();
+
     // Initialize NVS: ESP32 WiFi driver uses NVS to store WiFi settings
     // Erase NVS partition if it's out of free space or new version
     esp_ret = nvs_flash_init();
@@ -114,16 +140,19 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_ret);
 
     // Initialize virtual Ethernet (for QEMU)
-    esp_ret = eth_qemu_init();
+    esp_ret = eth_qemu_init(network_event_group);
     ESP_ERROR_CHECK(esp_ret);
 
     // Do forever: perform HTTP GET request
     while (1) {
 
         // Make sure Ethernet is connected and has an IP address
-        esp_ret = wait_for_connection();
-        if (esp_ret != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to connect to Ethernet (%d)", esp_ret);
+        if (!wait_for_ethernet(network_event_group)) {
+            ESP_LOGE(TAG, "Failed to connect to Ethernet. Reconnecting...");
+            esp_ret = eth_qemu_reconnect();
+            if (esp_ret != ESP_OK) {
+                ESP_LOGE(TAG, "Failed to reconnect Ethernet (%d)", esp_ret);
+            }
             continue;
         }
 
@@ -153,6 +182,7 @@ void app_main(void)
         sock = socket(dns_res->ai_family, dns_res->ai_socktype, dns_res->ai_protocol);
         if (sock < 0) {
             ESP_LOGE(TAG, "Failed to create socket (%d): %s", errno, strerror(errno));
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
             continue;
         }
 
@@ -161,6 +191,7 @@ void app_main(void)
         if (ret < 0) {
             ESP_LOGE(TAG, "Failed to set socket send timeout (%d): %s", errno, strerror(errno));
             close(sock);
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
             continue;
         }
 
@@ -169,6 +200,7 @@ void app_main(void)
         if (ret < 0) {
             ESP_LOGE(TAG, "Failed to set socket receive timeout (%d): %s", errno, strerror(errno));
             close(sock);
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
             continue;
         }
 
@@ -177,6 +209,7 @@ void app_main(void)
         if (ret < 0) {
             ESP_LOGE(TAG, "Failed to connect to server (%d): %s", errno, strerror(errno));
             close(sock);
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
             continue;
         }
 
@@ -189,6 +222,7 @@ void app_main(void)
         if (ret < 0) {
             ESP_LOGE(TAG, "Failed to send HTTP GET request (%d): %s", errno, strerror(errno));
             close(sock);
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
             continue;
         }
 
@@ -222,5 +256,12 @@ void app_main(void)
 
         // Wait before trying again
         vTaskDelay(5000 / portTICK_PERIOD_MS);
+
+        // TEST - stop ethernet to test reconnect
+        esp_ret = eth_qemu_stop();
+        if (esp_ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to stop Ethernet (%d)", esp_ret);
+            continue;
+        }
     }
 }

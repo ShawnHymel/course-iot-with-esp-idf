@@ -19,6 +19,7 @@ static esp_eth_phy_t *s_eth_phy = NULL;
 static esp_eth_mac_t *s_eth_mac = NULL;
 static esp_netif_t *s_eth_netif = NULL;
 static esp_eth_netif_glue_handle_t s_eth_glue = NULL;
+static EventGroupHandle_t s_eth_event_group = NULL;
 
 /*******************************************************************************
  * Private function prototypes
@@ -44,6 +45,8 @@ static void on_eth_event(void *arg,
                          int32_t event_id, 
                          void *event_data)
 {
+    esp_err_t esp_ret;
+
     // Determine event type
     switch (event_id) {
 
@@ -52,6 +55,8 @@ static void on_eth_event(void *arg,
             esp_eth_handle_t eth_handle = *(esp_eth_handle_t *)event_data;
             uint8_t mac_addr[6] = {0};
             esp_eth_ioctl(eth_handle, ETH_CMD_G_MAC_ADDR, mac_addr);
+            xEventGroupSetBits(s_eth_event_group, 
+                               ETHERNET_QEMU_CONNECTED_BIT);
             ESP_LOGI(TAG, "Ethernet link up");
             ESP_LOGI(TAG, 
                      "Ethernet HW Addr %02x:%02x:%02x:%02x:%02x:%02x",
@@ -62,15 +67,26 @@ static void on_eth_event(void *arg,
                      mac_addr[4], 
                      mac_addr[5]);
 
-            // %%%TEST: IPv6
-            ESP_ERROR_CHECK(esp_netif_create_ip6_linklocal(s_eth_netif));
+#if CONFIG_ETHERNET_QEMU_CONNECT_IPV6 || \
+    CONFIG_ETHERNET_QEMU_CONNECT_UNSPECIFIED
+            // Request IPv6 link-local address for the interface
+            esp_ret = esp_netif_create_ip6_linklocal(s_eth_netif);
+            if (esp_ret != ESP_OK) {
+                ESP_LOGE(TAG, "Failed to create IPv6 link-local address");
+            }
+#endif
 
             break;
         
         // Print message when disconnected
         case ETHERNET_EVENT_DISCONNECTED:
-            ESP_LOGI(TAG, "Ethernet disconnected. Attempting to reconnect...");
+            xEventGroupClearBits(s_eth_event_group, 
+                                 ETHERNET_QEMU_CONNECTED_BIT);
+            ESP_LOGI(TAG, "Ethernet disconnected");
+#if CONFIG_ETHERNET_QEMU_AUTO_RECONNECT
+            ESP_LOGI(TAG, "Attempting to reconnect...");
             eth_qemu_reconnect();
+#endif
             break;
 
         // Print message when started
@@ -80,6 +96,8 @@ static void on_eth_event(void *arg,
 
         // Print message when stopped
         case ETHERNET_EVENT_STOP:
+            xEventGroupClearBits(s_eth_event_group, 
+                                 ETHERNET_QEMU_CONNECTED_BIT);
             ESP_LOGI(TAG, "Ethernet stopped");
             break;
 
@@ -100,8 +118,12 @@ static void on_got_ip_event(void *arg,
     // Determine event type
     switch (event_id) {
 
-        // Print IP address
+#if CONFIG_ETHERNET_QEMU_CONNECT_IPV4 || \
+    CONFIG_ETHERNET_QEMU_CONNECT_UNSPECIFIED
+        // Set connected bit and print IPv4 address
         case IP_EVENT_ETH_GOT_IP:
+            xEventGroupSetBits(s_eth_event_group, 
+                               ETHERNET_QEMU_IPV4_CONNECTED_BIT);
             ip_event_got_ip_t *event_ip = (ip_event_got_ip_t *)event_data;
             esp_netif_ip_info_t *ip_info = &event_ip->ip_info;
             ESP_LOGI(TAG, "Ethernet IPv4 address obtained");
@@ -109,18 +131,27 @@ static void on_got_ip_event(void *arg,
             ESP_LOGI(TAG, "  Netmask:" IPSTR, IP2STR(&ip_info->netmask));
             ESP_LOGI(TAG, "  Gateway:" IPSTR, IP2STR(&ip_info->gw));
             break;
+#endif
 
-        // %%%TEST: IPv6
-        // Print IPv6 address
+#if CONFIG_ETHERNET_QEMU_CONNECT_IPV6 || \
+    CONFIG_ETHERNET_QEMU_CONNECT_UNSPECIFIED
+        // Set connected bit and print IPv6 address
         case IP_EVENT_GOT_IP6:
+            xEventGroupSetBits(s_eth_event_group, 
+                               ETHERNET_QEMU_IPV6_CONNECTED_BIT);
             ip_event_got_ip6_t *event_ipv6 = (ip_event_got_ip6_t *)event_data;
             esp_netif_ip6_info_t *ip6_info = &event_ipv6->ip6_info;
             ESP_LOGI(TAG, "Ethernet IPv6 address obtained");
             ESP_LOGI(TAG, "  IP address: " IPV6STR, IPV62STR(ip6_info->ip));
             break;
+#endif
 
         // Notify if lost IP address
         case IP_EVENT_ETH_LOST_IP:
+            xEventGroupClearBits(s_eth_event_group, 
+                                 ETHERNET_QEMU_IPV4_CONNECTED_BIT);
+            xEventGroupClearBits(s_eth_event_group,
+                                 ETHERNET_QEMU_IPV6_CONNECTED_BIT);
             ESP_LOGI(TAG, "Ethernet lost IP address");
             break;
 
@@ -135,35 +166,22 @@ static void on_got_ip_event(void *arg,
  * Public functions
  */
 
-// Check if Ethernet is up/connected
-bool eth_qemu_is_connected(void)
-{
-    return esp_netif_is_netif_up(s_eth_netif);
-}
-
-// Check if we have an IP address on the Ethernet interface
-bool eth_qemu_has_ip_addr(void)
-{
-    esp_netif_ip_info_t ip_info;
-    esp_netif_get_ip_info(s_eth_netif, &ip_info);
-    return ip_info.ip.addr != 0;
-}
-
-// Check if we have an IPv6 address on the Ethernet interface
-bool eth_qemu_has_ip6_addr(void)
-{
-    esp_ip6_addr_t ip6_info;
-    esp_netif_get_ip6_linklocal(s_eth_netif, &ip6_info);
-    return ip6_info.addr[0] != 0;
-}
-
 // Initialize QEMU virtual Ethernet
-esp_err_t eth_qemu_init(void)
+esp_err_t eth_qemu_init(EventGroupHandle_t event_group)
 {
     esp_err_t esp_ret;
 
     // Print message
     ESP_LOGI(TAG, "Starting Ethernet...");
+
+    // Save the event group handle
+    if (event_group != NULL) {
+        s_eth_event_group = event_group;
+    }
+    if (s_eth_event_group == NULL) {
+        ESP_LOGE(TAG, "Event group handle is NULL");
+        return ESP_FAIL;
+    }
 
     // Initialize network interface for Ethernet
     esp_netif_config_t netif_config = ESP_NETIF_DEFAULT_ETH();
@@ -222,8 +240,9 @@ esp_err_t eth_qemu_init(void)
         return esp_ret;
     }
 
-    // %%%TEST: IPv6
-    // Register IP event handlers
+#if CONFIG_ETHERNET_QEMU_CONNECT_IPV4 || \
+    CONFIG_ETHERNET_QEMU_CONNECT_UNSPECIFIED
+    // Register got IPv4 address event handler
     esp_ret = esp_event_handler_register(IP_EVENT, 
                                          IP_EVENT_ETH_GOT_IP,
                                          &on_got_ip_event, 
@@ -232,6 +251,11 @@ esp_err_t eth_qemu_init(void)
         ESP_LOGE(TAG, "Failed to register IP event handler");
         return esp_ret;
     }
+#endif
+
+#if CONFIG_ETHERNET_QEMU_CONNECT_IPV6 || \
+    CONFIG_ETHERNET_QEMU_CONNECT_UNSPECIFIED
+    // Register got IPv6 address event handler
     esp_ret = esp_event_handler_register(IP_EVENT, 
                                          IP_EVENT_GOT_IP6,
                                          &on_got_ip_event, 
@@ -240,6 +264,9 @@ esp_err_t eth_qemu_init(void)
         ESP_LOGE(TAG, "Failed to register IP event handler");
         return esp_ret;
     }
+#endif
+
+    // Register lost IP address event handler
     esp_ret = esp_event_handler_register(IP_EVENT, 
                                          IP_EVENT_ETH_LOST_IP, 
                                          &on_got_ip_event, 
@@ -275,15 +302,36 @@ esp_err_t eth_qemu_stop(void)
         return esp_ret;
     }
 
-    // %%%TEST: IPv6
-    // Unregister IP event handler
+#if CONFIG_ETHERNET_QEMU_CONNECT_IPV4 || \
+    CONFIG_ETHERNET_QEMU_CONNECT_UNSPECIFIED
+    // Unregister IPv4 event handler
     esp_ret = esp_event_handler_unregister(IP_EVENT, 
-                                           IP_EVENT_ETH_GOT_IP | 
-                                              IP_EVENT_GOT_IP6 | 
-                                              IP_EVENT_ETH_LOST_IP,
+                                           IP_EVENT_ETH_GOT_IP,
                                            &on_got_ip_event);
     if (esp_ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to unregister IP event handler");
+        ESP_LOGE(TAG, "Failed to unregister IPv4 event handler");
+        return esp_ret;
+    }
+#endif
+
+#if CONFIG_ETHERNET_QEMU_CONNECT_IPV6 || \
+    CONFIG_ETHERNET_QEMU_CONNECT_UNSPECIFIED
+    // Unregister IPv6 event handler
+    esp_ret = esp_event_handler_unregister(IP_EVENT, 
+                                           IP_EVENT_GOT_IP6,
+                                           &on_got_ip_event);
+    if (esp_ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to unregister IPv6 event handler");
+        return esp_ret;
+    }
+#endif
+
+    // Unregister lost IP address event handler
+    esp_ret = esp_event_handler_unregister(IP_EVENT, 
+                                           IP_EVENT_ETH_LOST_IP,
+                                           &on_got_ip_event);
+    if (esp_ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to unregister lost IP address event handler");
         return esp_ret;
     }
 
@@ -337,6 +385,16 @@ esp_err_t eth_qemu_stop(void)
         esp_netif_destroy(s_eth_netif);
     }
 
+    // Clear event group bits
+    if (s_eth_event_group != NULL) {
+        xEventGroupClearBits(s_eth_event_group, 
+                             ETHERNET_QEMU_CONNECTED_BIT);
+        xEventGroupClearBits(s_eth_event_group, 
+                             ETHERNET_QEMU_IPV4_CONNECTED_BIT);
+        xEventGroupClearBits(s_eth_event_group, 
+                             ETHERNET_QEMU_IPV6_CONNECTED_BIT);
+    }
+
     // Set handles to NULL
     s_eth_handle = NULL;
     s_eth_phy = NULL;
@@ -363,7 +421,7 @@ esp_err_t eth_qemu_reconnect(void)
     }
 
     // Initialize Ethernet
-    esp_ret = eth_qemu_init();
+    esp_ret = eth_qemu_init(NULL);
     if (esp_ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize Ethernet");
         return esp_ret;
