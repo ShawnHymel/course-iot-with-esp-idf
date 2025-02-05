@@ -1,3 +1,8 @@
+/*
+ * SPDX-FileCopyrightText: 2025 Shawn Hymel
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 #ifndef ETHERNET_QEMU_H
 #define ETHERNET_QEMU_H
 

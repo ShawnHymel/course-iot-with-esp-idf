@@ -1,0 +1,46 @@
+menu "WiFi Configuration"
+
+    config CONNECT_WIFI
+        bool "Connect using WiFi"
+        default n
+        help
+            Enables the WiFi driver to connect to your local network.
+
+    if CONNECT_WIFI
+        choice CONNECT_IP_TYPE
+            prompt "Select IP Type"
+            default WIFI_CONNECT_IPV4
+            help
+                Choose the IP type to use for the connection (IPv4, IPv6, or 
+                Unspecified).
+
+            config WIFI_CONNECT_IPV4
+                bool "IPv4"
+                select LWIP_IPV4
+                help
+                    Use only IPv4 for the WiFi connection.
+
+            config WIFI_CONNECT_IPV6
+                bool "IPv6"
+                select LWIP_IPV6
+                help
+                    Use only IPv6 for the WiFi connection.
+
+            config WIFI_CONNECT_UNSPECIFIED
+                bool "Either IPv4 or IPv6"
+                select LWIP_IPV4
+                select LWIP_IPV6
+                help
+                    Use either IPv4 or IPv6 for the WiFi connection.
+    
+        endchoice
+    endif
+
+    config WIFI_AUTO_RECONNECT
+        bool "Automatically attempt reconnect on disconnect"
+        default n
+        help
+            If a disconnect event occurs, automatically attempt to reconnect to
+            the network.
+
+endmenu
