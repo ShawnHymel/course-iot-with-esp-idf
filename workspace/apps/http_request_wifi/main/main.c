@@ -149,6 +149,9 @@ void app_main(void)
     // Do forever: perform HTTP GET request
     while (1) {
 
+        // Print current free heap
+        ESP_LOGI(TAG, "Free heap: %lu bytes", esp_get_free_heap_size());
+
         // Make sure network is connected and has an IP address
         if (!wait_for_wifi(network_event_group)) {
             ESP_LOGE(TAG, "Failed to connect to WiFi. Reconnecting...");

@@ -56,7 +56,6 @@ static void on_wifi_event(void *arg,
                          int32_t event_id, 
                          void *event_data)
 {
-    esp_err_t esp_ret;
 
     // Determine event type
     switch(event_id) {
@@ -99,7 +98,7 @@ static void on_wifi_event(void *arg,
             // (s4.2) Register interface receive callback
             wifi_netif_driver_t driver = esp_netif_get_io_driver(s_wifi_netif);
             if (!esp_wifi_is_if_ready_when_started(driver)) {
-                esp_ret = esp_wifi_register_if_rxcb(driver,
+                esp_err_t esp_ret = esp_wifi_register_if_rxcb(driver,
                                                     esp_netif_receive,
                                                     s_wifi_netif);
                 if (esp_ret != ESP_OK) {
@@ -278,7 +277,9 @@ static void wifi_start(void *esp_netif,
     esp_ret = esp_wifi_internal_reg_netstack_buf_cb(esp_netif_netstack_buf_ref, 
                                                     esp_netif_netstack_buf_free);
     if (esp_ret != ESP_OK) {
-        ESP_LOGE(TAG, "netstack cb reg failed with %d", esp_ret);
+        ESP_LOGE(TAG, 
+                 "Error (%d): Netstack callback registration failed", 
+                 esp_ret);
         return;
     }
 
@@ -568,22 +569,28 @@ esp_err_t wifi_sta_stop(void)
 
     // (s8.1) Disconnect from WiFi
     esp_ret = esp_wifi_disconnect();
-    if (esp_ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to disconnect from WiFi (%d)", esp_ret);
+    if (esp_ret == ESP_ERR_WIFI_NOT_INIT || ESP_ERR_WIFI_NOT_STARTED) {
+        ESP_LOGI(TAG, "WiFi already disconnected");
+    } else if (esp_ret != ESP_OK) {
+        ESP_LOGE(TAG, "Error (%d): Failed to disconnect from WiFi", esp_ret);
         return ESP_FAIL;
     }
 
     // (s8.2) Stop the WiFi driver
     esp_ret = esp_wifi_stop();
-    if (esp_ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to stop WiFi driver");
+    if (esp_ret == ESP_ERR_WIFI_NOT_INIT) {
+        ESP_LOGI(TAG, "WiFi driver already stopped");
+    } else if (esp_ret != ESP_OK) {
+        ESP_LOGE(TAG, "Error (%d): Failed to stop WiFi driver", esp_ret);
         return ESP_FAIL;
     }
 
     // (s8.3) Unload the WiFi driver, free resources
     esp_ret = esp_wifi_deinit();
-    if (esp_ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to deinitialize WiFi");
+    if (esp_ret == ESP_ERR_WIFI_NOT_INIT) {
+        ESP_LOGI(TAG, "WiFi driver already deinitialized");
+    } else if (esp_ret != ESP_OK) {
+        ESP_LOGE(TAG, "Error (%d): Failed to deinitialize WiFi", esp_ret);
         return ESP_FAIL;
     }
 
@@ -626,6 +633,9 @@ esp_err_t wifi_sta_reconnect(void)
         ESP_LOGE(TAG, "Failed to initialize WiFi during reconnect");
         return esp_ret;
     }
+
+    // %%%TEST Print free heap memory
+    printf("%lu, ", esp_get_free_heap_size());
 
     return ESP_OK;
 }
