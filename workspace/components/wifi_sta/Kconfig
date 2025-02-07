@@ -1,0 +1,96 @@
+menu "WiFi STA Configuration"
+
+    config WIFI_STA_CONNECT
+        bool "Connect using WiFi"
+        default n
+        help
+            Enables the WiFi driver to connect to your local network.
+
+    if WIFI_STA_CONNECT
+        choice WIFI_STA_IP_TYPE
+            prompt "Internet Protocol (IP) version"
+            default WIFI_STA_CONNECT_IPV4
+            help
+                Choose the IP type to use for the connection (IPv4, IPv6, or 
+                Unspecified).
+            config WIFI_STA_CONNECT_IPV4
+                bool "IPv4"
+                select LWIP_IPV4
+                help
+                    Use only IPv4 for the WiFi connection.
+            config WIFI_STA_CONNECT_IPV6
+                bool "IPv6"
+                select LWIP_IPV6
+                help
+                    Use only IPv6 for the WiFi connection.
+            config WIFI_STA_CONNECT_UNSPECIFIED
+                bool "Either IPv4 or IPv6"
+                select LWIP_IPV4
+                select LWIP_IPV6
+                help
+                    Use either IPv4 or IPv6 for the WiFi connection.
+        endchoice
+
+        choice WIFI_STA_AUTH_MODE
+            prompt "Minimum WiFi authentication mode"
+            default WIFI_STA_AUTH_WPA2_PSK
+            help
+                The weakest authentication mode that the device will attempt to
+                use when connecting to an access point.
+            config WIFI_STA_AUTH_OPEN
+                bool "OPEN"
+            config WIFI_STA_AUTH_WEP
+                bool "WEP"
+            config WIFI_STA_AUTH_WPA_PSK
+                bool "WPA PSK"
+            config WIFI_STA_AUTH_WPA2_PSK
+                bool "WPA2 PSK"
+            config WIFI_STA_AUTH_WPA_WPA2_PSK
+                bool "WPA/WPA2 PSK"
+            config WIFI_STA_AUTH_WPA3_PSK
+                bool "WPA3 PSK"
+            config WIFI_STA_AUTH_WPA2_WPA3_PSK
+                bool "WPA2/WPA3 PSK"
+            config WIFI_STA_AUTH_WAPI_PSK
+                bool "WAPI PSK"
+        endchoice
+
+        config WIFI_STA_SSID
+            string "WiFi SSID"
+            default "myssid"
+            help
+                Network name (SSID) to connect to.
+
+        config WIFI_STA_PASSWORD
+            string "WiFi password"
+            default "mypassword"
+
+        choice WIFI_STA_WPA3_SAE_MODE
+            prompt "SAE mode for WPA3"
+            default WIFI_STA_WPA3_SAE_PWE_BOTH
+            help
+                Select SAE mode as Hunt and Peck, H2E, or both.
+            config WIFI_STA_WPA3_SAE_PWE_HUNT_AND_PECK
+                bool "Hunt and Peck"
+            config WIFI_STA_WPA3_SAE_PWE_H2E
+                bool "Hash to Element (H2E)"
+            config WIFI_STA_WPA3_SAE_PWE_BOTH
+                bool "Both"
+        endchoice
+
+        config WIFI_STA_WPA3_PASSWORD_ID
+            string "Password identifier for SAE H2E"
+            depends on WIFI_STA_WPA3_SAE_PWE_H2E || WIFI_STA_WPA3_SAE_PWE_BOTH
+            default ""
+            help
+                Password identifier for SAE H2E mode.
+
+        config WIFI_STA_AUTO_RECONNECT
+            bool "Automatically attempt reconnect on disconnect"
+            default n
+            help
+                If a disconnect event occurs, automatically attempt to reconnect to
+                the network.
+
+    endif
+endmenu

@@ -1,7 +1,7 @@
 set(srcs)
 set(include_dirs "include")
 
-if(CONFIG_CONNECT_ETHERNET_QEMU)
+if(CONFIG_ETHERNET_QEMU_CONNECT)
     list(APPEND srcs
         "ethernet_qemu.c")
 endif()

@@ -12,7 +12,7 @@
 #include "nvs_flash.h"
 #include "lwip/netdb.h"
 
-#include "ethernet_qemu.h"
+#include "wifi_sta.h"
 
 // Server settings and URL to fetch
 #define WEB_HOST "example.com"
@@ -25,57 +25,60 @@ static const char *REQUEST = "GET " WEB_PATH " HTTP/1.0\r\n"
     "User-Agent: esp-idf/1.0 esp32\r\n"
     "\r\n";
 
-// Settings
+// Log settings
 #define LOG_LEVEL               ESP_LOG_VERBOSE                 // Set log level
+
 // Set IPv4 or IPv6 family (AF_INET, AF_INET6, AF_UNSPEC)
-#if CONFIG_ETHERNET_QEMU_CONNECT_IPV4
+#if CONFIG_WIFI_STA_CONNECT_IPV4
 #  define WEB_FAMILY              AF_INET
-#elif CONFIG_ETHERNET_QEMU_CONNECT_IPV6
+#elif CONFIG_WIFI_STA_CONNECT_IPV6
 #  define WEB_FAMILY              AF_INET6
-#elif CONFIG_ETHERNET_QEMU_CONNECT_UNSPECIFIED
+#elif CONFIG_WIFI_STA_CONNECT_UNSPECIFIED
 #  define WEB_FAMILY              AF_UNSPEC
 #else
 #  error "Please select an IP family in menuconfig"
-#endif         
-#define SOCKET_TIMEOUT_SEC      5                               // Set socket timeout in seconds
-#define RX_BUF_SIZE             64                              // Set receive buffer size (bytes)
-#define CONNECTION_TIMEOUT_SEC  5                               // Set delay to wait for connection in seconds
+#endif
+
+// Set timeouts
+#define SOCKET_TIMEOUT_SEC      5   // Set socket timeout in seconds
+#define RX_BUF_SIZE             64  // Set receive buffer size (bytes)
+#define CONNECTION_TIMEOUT_SEC  10  // Set delay to wait for connection (sec)
 
 // Tag for debug messages
 static const char *TAG = "http_request";
 
-// Wait for Ethernet to connect
-static bool wait_for_ethernet(EventGroupHandle_t network_event_group)
+// Wait for WiFi to connect
+static bool wait_for_wifi(EventGroupHandle_t network_event_group)
 {
     EventBits_t network_event_bits;
 
-    // Wait for Ethernet to connect
-    ESP_LOGI(TAG, "Waiting for Ethernet to connect...");
+    // Wait for network to connect
+    ESP_LOGI(TAG, "Waiting for WiFi to connect...");
     network_event_bits = xEventGroupWaitBits(network_event_group, 
-                                             ETHERNET_QEMU_CONNECTED_BIT, 
+                                             WIFI_STA_CONNECTED_BIT, 
                                              pdFALSE, 
                                              pdTRUE, 
                                              CONNECTION_TIMEOUT_SEC * 1000 / 
                                                 portTICK_PERIOD_MS);
-    if (network_event_bits & ETHERNET_QEMU_CONNECTED_BIT) {
-        ESP_LOGI(TAG, "Connected to Ethernet");
+    if (network_event_bits & WIFI_STA_CONNECTED_BIT) {
+        ESP_LOGI(TAG, "Connected to WiFi");
     } else {
-        ESP_LOGE(TAG, "Failed to connect to Ethernet");
+        ESP_LOGE(TAG, "Failed to connect to WiFi");
         return false;
     }
 
     // Wait for IP address
     ESP_LOGI(TAG, "Waiting for IP address...");
     network_event_bits = xEventGroupWaitBits(network_event_group, 
-                                             ETHERNET_QEMU_IPV4_OBTAINED_BIT | 
-                                             ETHERNET_QEMU_IPV6_OBTAINED_BIT, 
+                                             WIFI_STA_IPV4_OBTAINED_BIT | 
+                                             WIFI_STA_IPV6_OBTAINED_BIT, 
                                              pdFALSE, 
                                              pdTRUE, 
                                              CONNECTION_TIMEOUT_SEC * 1000 / 
                                                 portTICK_PERIOD_MS);
-    if (network_event_bits & ETHERNET_QEMU_IPV4_OBTAINED_BIT) {
+    if (network_event_bits & WIFI_STA_IPV4_OBTAINED_BIT) {
         ESP_LOGI(TAG, "Connected to IPv4 network");
-    } else if (network_event_bits & ETHERNET_QEMU_IPV6_OBTAINED_BIT) {
+    } else if (network_event_bits & WIFI_STA_IPV6_OBTAINED_BIT) {
         ESP_LOGI(TAG, "Connected to IPv6 network");
     } else {
         ESP_LOGE(TAG, "Failed to obtain IP address");
@@ -130,28 +133,28 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_ret);
 
     // Initialize TCP/IP network interface (only call once in application)
-    // Must be called prior to initializing Ethernet!
+    // Must be called prior to initializing the network driver!
     esp_ret = esp_netif_init();
     ESP_ERROR_CHECK(esp_ret);
 
     // Create default event loop that runs in the background
-    // Must be running prior to initializing Ethernet!
+    // Must be running prior to initializing the network driver!
     esp_ret = esp_event_loop_create_default();
     ESP_ERROR_CHECK(esp_ret);
 
-    // Initialize virtual Ethernet (for QEMU)
-    esp_ret = eth_qemu_init(network_event_group);
+    // Initialize WiFi
+    esp_ret = wifi_sta_init(network_event_group);
     ESP_ERROR_CHECK(esp_ret);
 
     // Do forever: perform HTTP GET request
     while (1) {
 
-        // Make sure Ethernet is connected and has an IP address
-        if (!wait_for_ethernet(network_event_group)) {
-            ESP_LOGE(TAG, "Failed to connect to Ethernet. Reconnecting...");
-            esp_ret = eth_qemu_reconnect();
+        // Make sure network is connected and has an IP address
+        if (!wait_for_wifi(network_event_group)) {
+            ESP_LOGE(TAG, "Failed to connect to WiFi. Reconnecting...");
+            esp_ret = wifi_sta_reconnect();
             if (esp_ret != ESP_OK) {
-                ESP_LOGE(TAG, "Failed to reconnect Ethernet (%d)", esp_ret);
+                ESP_LOGE(TAG, "Failed to reconnect WiFi (%d)", esp_ret);
             }
             continue;
         }
@@ -257,10 +260,10 @@ void app_main(void)
         // Wait before trying again
         vTaskDelay(5000 / portTICK_PERIOD_MS);
 
-        // TEST - stop ethernet to test reconnect
-        esp_ret = eth_qemu_stop();
+        // TEST - stop network to test reconnect
+        esp_ret = wifi_sta_stop();
         if (esp_ret != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to stop Ethernet (%d)", esp_ret);
+            ESP_LOGE(TAG, "Failed to stop network driver (%d)", esp_ret);
             continue;
         }
     }

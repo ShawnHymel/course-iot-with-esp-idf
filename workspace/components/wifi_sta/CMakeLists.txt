@@ -1,9 +1,9 @@
 set(srcs)
 set(include_dirs "include")
 
-if(CONFIG_CONNECT_WIFI)
+if(CONFIG_WIFI_STA_CONNECT)
     list(APPEND srcs
-        "wifi.c")
+        "wifi_sta.c")
 endif()
 
 idf_component_register(SRCS "${srcs}"
