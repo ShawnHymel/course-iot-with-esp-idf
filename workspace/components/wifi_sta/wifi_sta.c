@@ -28,53 +28,6 @@ static esp_netif_t *s_wifi_netif = NULL;
 static EventGroupHandle_t s_wifi_event_group = NULL;
 static wifi_netif_driver_t s_wifi_driver = NULL;
 
-// %%%TEST - heap trace
-#include "esp_heap_trace.h"
-#define NUM_RECORDS 1000
-static heap_trace_record_t trace_buffer[NUM_RECORDS];
-static bool trace_is_started = false;
-
-esp_err_t wifi_sta_heap_check(EventGroupHandle_t event_handle)
-{
-    esp_err_t esp_ret;
-
-    // if (!trace_is_started) {
-    //     esp_ret = heap_trace_init_standalone(trace_buffer,NUM_RECORDS);
-    //     if (esp_ret != ESP_OK) {
-    //         ESP_LOGE(TAG, "Could not init heap trace");
-    //         return esp_ret;
-    //     }
-    // }
-
-    // // Start heap trace
-    // heap_trace_start(HEAP_TRACE_LEAKS);
-    
-    // Start WiFi
-    esp_ret = wifi_sta_init(event_handle);
-    if (esp_ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize WiFi during reconnect");
-        return esp_ret;
-    }
-
-    // Stop WiFi
-    esp_ret = wifi_sta_stop();
-    if (esp_ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to stop WiFi during reconnect");
-        return esp_ret;
-    }
-    
-    // // Stop heap trace
-    // heap_trace_stop();
-    // heap_trace_dump();
-
-    // Print free heap
-    printf("%lu, ", esp_get_free_heap_size());
-
-    return ESP_OK;
-}
-
-// %%%TEST END
-
 /*******************************************************************************
  * Private function prototypes
  */
@@ -368,7 +321,6 @@ esp_err_t wifi_sta_init(EventGroupHandle_t event_group)
     }
 
     // (s1.3) Create WiFi driver
-    // %%%TEST -- THIS IS LEAKING!
     s_wifi_driver = esp_wifi_create_if_driver(WIFI_IF_STA);
     if (s_wifi_driver == NULL) {
         ESP_LOGE(TAG, "Failed to create wifi interface handle");

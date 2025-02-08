@@ -1,15 +1,18 @@
+/*
+ * SPDX-FileCopyrightText: 2025 Shawn Hymel
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 #include <string.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "esp_private/wifi.h"
-#include "esp_wifi.h"
-#include "esp_wifi_netif.h"
 #include "esp_event.h"
 #include "esp_log.h"
+#include "esp_netif.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "nvs_flash.h"
 #include "lwip/netdb.h"
 
-#include "wifi_settings.h"
+#include "network_wrapper.h"
 
 // Server settings and URL to fetch
 #define WEB_HOST "example.com"
@@ -22,344 +25,53 @@ static const char *REQUEST = "GET " WEB_PATH " HTTP/1.0\r\n"
     "User-Agent: esp-idf/1.0 esp32\r\n"
     "\r\n";
 
-// Settings
-#define LOG_LEVEL           ESP_LOG_VERBOSE                 // Set log level
-#define WEB_FAMILY          AF_INET6                         // Set IPv4 or IPv6 family (AF_INET or AF_INET6)
-#define SOCKET_TIMEOUT_SEC  5                               // Set socket timeout in seconds
-#define RECONNECT_DELAY_SEC CONFIG_ESP_RECONNECT_DELAY_SEC  // Set delay to reconnect in seconds
-#define RX_BUF_SIZE         64                              // Set receive buffer size (bytes)
+// Set timeouts
+#define SOCKET_TIMEOUT_SEC      5   // Set socket timeout in seconds
+#define RX_BUF_SIZE             64  // Set receive buffer size (bytes)
+#define CONNECTION_TIMEOUT_SEC  10  // Set delay to wait for connection (sec)
 
 // Tag for debug messages
 static const char *TAG = "http_request";
 
-// Static globals
-static EventGroupHandle_t s_wifi_event_group;
-static esp_netif_t *s_wifi_netif = NULL;
-
-// TEST: start WiFi
-static void wifi_start(void *esp_netif, esp_event_base_t base, int32_t event_id, void *data)
+// Wait for WiFi to connect
+static bool wait_for_network(EventGroupHandle_t network_event_group)
 {
-    uint8_t mac[6];
-    esp_err_t esp_ret;
+    EventBits_t network_event_bits;
 
-    // (s1.3) Get esp-netif driver handle
-    wifi_netif_driver_t driver = esp_netif_get_io_driver(esp_netif);
-    if (driver == NULL) {
-        ESP_LOGE(TAG, "Failed to get WiFi driver handle");
-        return;
-    }
-
-    // (s1.3) Get MAC address of WiFi interface
-    if ((esp_ret = esp_wifi_get_if_mac(driver, mac)) != ESP_OK) {
-        ESP_LOGE(TAG, "esp_wifi_get_mac failed with %d", esp_ret);
-        return;
-    }
-    ESP_LOGI(TAG, "WIFI mac address: %x %x %x %x %x %x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-
-    // (s1.3) Register interface receive callback
-    if (esp_wifi_is_if_ready_when_started(driver)) {
-        if ((esp_ret = esp_wifi_register_if_rxcb(driver,  esp_netif_receive, esp_netif)) != ESP_OK) {
-            ESP_LOGE(TAG, "esp_wifi_register_if_rxcb for if=%p failed with %d", driver, esp_ret);
-            return;
-        }
-    }
-
-    // (s1.3) Register netstack buffer reference and free callback
-    if ((esp_ret = esp_wifi_internal_reg_netstack_buf_cb(esp_netif_netstack_buf_ref, esp_netif_netstack_buf_free)) != ESP_OK) {
-        ESP_LOGE(TAG, "netstack cb reg failed with %d", esp_ret);
-        return;
-    }
-
-    // (s1.3) Set MAC address of the WiFi interface
-    esp_ret = esp_netif_set_mac(esp_netif, mac);
-    if (esp_ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to set MAC address");
-        return;
-    }
-
-    // (s1.3) Start the WiFi interface
-    esp_netif_action_start(esp_netif, base, event_id, data);
-
-    // (s3.3) Connect to WiFi
-    ESP_LOGI(TAG, "Connecting to %s...", ESP_WIFI_SSID);
-    esp_ret = esp_wifi_connect();
-    ESP_ERROR_CHECK(esp_ret);
-}
-
-// Event handler: WiFi events
-static void on_wifi_event(void *arg, 
-                         esp_event_base_t event_base, 
-                         int32_t event_id, 
-                         void *event_data)
-{
-    esp_err_t esp_ret;
-
-    // Determine event type
-    switch(event_id) {
-
-        // WiFi started
-        case WIFI_EVENT_STA_START:
-            if (s_wifi_netif != NULL) {
-                wifi_start(s_wifi_netif, event_base, event_id, event_data);
-            }
-            break;
-
-        // WiFi stopped
-        case WIFI_EVENT_STA_STOP:
-            if (s_wifi_netif != NULL) {
-                esp_netif_action_stop(s_wifi_netif, event_base, event_id, event_data);
-            }
-            break;
-
-        // Connected to WiFi
-        case WIFI_EVENT_STA_CONNECTED:
-
-            // Make sure we have a valid interface handle
-            if (s_wifi_netif != NULL) {
-
-                // (s4.2) Register interface receive callback
-                wifi_netif_driver_t driver = esp_netif_get_io_driver(s_wifi_netif);
-                if (!esp_wifi_is_if_ready_when_started(driver)) {
-                    esp_ret = esp_wifi_register_if_rxcb(driver, esp_netif_receive, s_wifi_netif);
-                    if (esp_ret != ESP_OK) {
-                        ESP_LOGE(TAG, "Failed to register WiFi RX callback");
-                        return;
-                    }
-                }
-
-                // (s4.2) Set up the WiFi interface and start DHCP process
-                esp_netif_action_connected(s_wifi_netif, event_base, event_id, event_data);
-
-                // %%%TEST: IPv6
-                esp_netif_create_ip6_linklocal(s_wifi_netif);
-            }
-            break;
-
-        // Disconnected from WiFi
-        case WIFI_EVENT_STA_DISCONNECTED:
-            if (s_wifi_netif != NULL) {
-                esp_netif_action_disconnected(s_wifi_netif, event_base, event_id, event_data);
-            }
-            xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
-            break;
-    }
-}
-
-// Event handler: IP events
-static void on_ip_event(void *arg, 
-                        esp_event_base_t event_base, 
-                        int32_t event_id, 
-                        void *event_data)
-{
-    esp_err_t esp_ret;
-
-    // Determine event type
-    switch(event_id) {
-
-        // (s5.2) Got IP address
-        case IP_EVENT_STA_GOT_IP:
-            if (s_wifi_netif != NULL) {
-
-                // Notify the WiFi driver that we got an IP address
-                esp_ret = esp_wifi_internal_set_sta_ip();
-                if (esp_ret != ESP_OK) {
-                    ESP_LOGI(TAG, "Failed to set IP address");
-                }
-                
-                // Just prints IP address?
-                // esp_netif_action_got_ip(s_wifi_netif, event_base, event_id, event_data);
-
-                // Print IP address
-                ip_event_got_ip_t *event_ip = (ip_event_got_ip_t *)event_data;
-                ESP_LOGI(TAG, "Got IPv4 address:");
-                ESP_LOGI(TAG, "  IP address: " IPSTR, IP2STR(&event_ip->ip_info.ip));
-                ESP_LOGI(TAG, "  Netmask: " IPSTR, IP2STR(&event_ip->ip_info.netmask));
-                ESP_LOGI(TAG, "  Gateway: " IPSTR, IP2STR(&event_ip->ip_info.gw));
-            }
-            break;
-
-        // (s5.2) Got IPv6 address
-        case IP_EVENT_GOT_IP6:
-            ip_event_got_ip6_t *event_ip6 = (ip_event_got_ip6_t *)event_data;
-            ESP_LOGI(TAG, "Got IPv6 address: " IPV6STR, IPV62STR(event_ip6->ip6_info.ip));
-
-            // Notify that WiFi is connected
-            xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
-
-            break;
-    }
-}
-
-// // Called on WiFi events
-// static void wifi_event_handler(void* arg, 
-//                                esp_event_base_t event_base,
-//                                int32_t event_id, 
-//                                void* event_data)
-// {
-//     // Try to connect to WiFi AP
-//     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
-//         ESP_LOGI(TAG, "Connecting to %s...", ESP_WIFI_SSID);
-//         esp_wifi_connect();
-
-//         // %%%TEST: IPv6
-//         // esp_netif_create_ip6_linklocal(s_wifi_netif);
-
-//     // If disconnected, try to reconnect in a few seconds
-//     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-//         xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
-//         ESP_LOGI(TAG, 
-//                  "WiFi disconnected. Waiting %i seconds to reconnect.", 
-//                   RECONNECT_DELAY_SEC);
-//         vTaskDelay((RECONNECT_DELAY_SEC * 1000) / portTICK_PERIOD_MS);
-//         ESP_LOGI(TAG, "Reconnecting to %s...", ESP_WIFI_SSID);
-//         esp_wifi_connect();
-
-//     // If connected, print IP address and set event group bit
-//     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
-//         ip_event_got_ip_t* event = (ip_event_got_ip_t*)event_data;
-//         ESP_LOGI(TAG, "Got IP address: " IPSTR, IP2STR(&event->ip_info.ip));
-//         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
-
-//     // If got IPv6 address, print it
-//     } else if (event_base == IP_EVENT && event_id == IP_EVENT_GOT_IP6) {
-//         ip_event_got_ip6_t* event_ip6 = (ip_event_got_ip6_t*)event_data;
-//         ESP_LOGI(TAG, "Got IPv6 address: " IPV6STR, IPV62STR(event_ip6->ip6_info.ip));
-//     }
-// }
-
-// Initialize WiFi in station (STA) mode
-// See: https://docs.espressif.com/projects/esp-idf/en/release-v5.4/esp32/api-guides/wifi.html
-// for more information on the WiFi initialization process
-esp_err_t wifi_init_sta(void)
-{
-    esp_err_t esp_ret;
-
-    // Create event group
-    s_wifi_event_group = xEventGroupCreate();
-
-    // (s1.1) Initialize TCP/IP stack
-    esp_ret = esp_netif_init();
-    ESP_ERROR_CHECK(esp_ret);
-
-    // (s1.2) Create default event loop
-    esp_ret = esp_event_loop_create_default();
-    ESP_ERROR_CHECK(esp_ret);
-
-    // (s1.3) Create default WiFi network interface
-    esp_netif_config_t netif_cfg = ESP_NETIF_DEFAULT_WIFI_STA();
-    s_wifi_netif = esp_netif_new(&netif_cfg);
-    if (s_wifi_netif == NULL) {
-        ESP_LOGE(TAG, "Failed to create WiFi network interface");
-        return ESP_FAIL;
-    }
-
-    // (s1.3) Create WiFi driver
-    wifi_netif_driver_t driver = esp_wifi_create_if_driver(WIFI_IF_STA);
-    if (driver == NULL) {
-        ESP_LOGE(TAG, "Failed to create wifi interface handle");
-        return ESP_FAIL;
-    }
-
-    // (s1.3) Connect WiFi driver to network interface
-    esp_ret = esp_netif_attach(s_wifi_netif, driver);
-    ESP_ERROR_CHECK(esp_ret);
-
-    // (s1.3) Register event handlers
-    esp_ret = esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_START, &on_wifi_event, NULL);
-    ESP_ERROR_CHECK(esp_ret);
-    esp_ret = esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_STOP, &on_wifi_event, NULL);
-    ESP_ERROR_CHECK(esp_ret);
-    esp_ret = esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_CONNECTED, &on_wifi_event, NULL);
-    ESP_ERROR_CHECK(esp_ret);
-    esp_ret = esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, &on_wifi_event, NULL);
-    ESP_ERROR_CHECK(esp_ret);
-    esp_ret = esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &on_ip_event, NULL);
-    ESP_ERROR_CHECK(esp_ret);
-    esp_ret = esp_register_shutdown_handler((shutdown_handler_t)esp_wifi_stop);
-    ESP_ERROR_CHECK(esp_ret);
-
-    // %%%TEST: IPv6
-    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_GOT_IP6, &on_ip_event, NULL));
-
-    // (s1.4) Initialize WiFi
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    esp_ret = esp_wifi_init(&cfg);
-    ESP_ERROR_CHECK(esp_ret);
-
-    //Initialize network interface for WiFi in station mode
-    // esp_netif_inherent_config_t esp_netif_config = ESP_NETIF_INHERENT_DEFAULT_WIFI_STA();
-    // s_wifi_netif = esp_netif_create_wifi(WIFI_IF_STA, &esp_netif_config);
-    // if (s_wifi_netif == NULL) {
-    //     ESP_LOGE(TAG, "Failed to create WiFi network interface");
-    //     return;
-    // }
-
-    // // Initialize WiFi station mode
-    // esp_netif_config_t wifi_cfg = ESP_NETIF_DEFAULT_WIFI_STA();
-    // s_wifi_netif = esp_netif_new(&wifi_cfg);
-    // assert(s_wifi_netif);
-    // ESP_ERROR_CHECK(esp_netif_attach_wifi_station(s_wifi_netif));
-    // // ESP_ERROR_CHECK(esp_wifi_set_default_wifi_sta_handlers());
-
-    // wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    // ret = esp_wifi_init(&cfg);
-    // ESP_ERROR_CHECK(ret);
-
-    // // Register WiFi event handler
-    // ret = esp_event_handler_instance_register(WIFI_EVENT,
-    //                                           ESP_EVENT_ANY_ID,
-    //                                           &wifi_event_handler,
-    //                                           NULL,
-    //                                           &event_any_id);
-    // ESP_ERROR_CHECK(ret);
-
-    // // Register IP address event handler
-    // ret = esp_event_handler_instance_register(IP_EVENT,
-    //                                           IP_EVENT_STA_GOT_IP,
-    //                                           &wifi_event_handler,
-    //                                           NULL,
-    //                                           &event_got_ip);
-    // ESP_ERROR_CHECK(ret);
-        
-
-    // (s2) Set WiFi mode to station (device)
-    esp_ret = esp_wifi_set_mode(WIFI_MODE_STA);
-    ESP_ERROR_CHECK(esp_ret);
-
-    // (s2) Configure WiFi connection
-    // Note: You can save these settings in NVS for future use if you are e.g.
-    // using a provisioning app to set up the device
-    wifi_config_t wifi_config = {
-        .sta = {
-            .ssid = ESP_WIFI_SSID,
-            .password = ESP_WIFI_PASSWORD,
-            .threshold.authmode = ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD,
-            .sae_pwe_h2e = ESP_WIFI_SAE_MODE,
-            .sae_h2e_identifier = EXAMPLE_H2E_IDENTIFIER,
-        },
-    };
-    esp_ret = esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
-    ESP_ERROR_CHECK(esp_ret);
-
-    // (s3.1) Start the WiFi driver
-    esp_ret = esp_wifi_start();
-    ESP_ERROR_CHECK(esp_ret);
-
-
-    // Wait for connection and IP address assignment
-    // TODO: move this to app
-    EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
-                                           WIFI_CONNECTED_BIT,
-                                           pdFALSE,
-                                           pdFALSE,
-                                           portMAX_DELAY);
-    if (bits & WIFI_CONNECTED_BIT) {
-        ESP_LOGI(TAG, "Connected to AP SSID: %s", ESP_WIFI_SSID);
+    // Wait for network to connect
+    ESP_LOGI(TAG, "Waiting for WiFi to connect...");
+    network_event_bits = xEventGroupWaitBits(network_event_group, 
+                                             NETWORK_CONNECTED_BIT, 
+                                             pdFALSE, 
+                                             pdTRUE, 
+                                             CONNECTION_TIMEOUT_SEC * 1000 / 
+                                                portTICK_PERIOD_MS);
+    if (network_event_bits & NETWORK_CONNECTED_BIT) {
+        ESP_LOGI(TAG, "Connected to WiFi");
     } else {
-        ESP_LOGE(TAG, "Failed to connect to AP SSID: %s", ESP_WIFI_SSID);
+        ESP_LOGE(TAG, "Failed to connect to WiFi");
+        return false;
     }
 
-    return ESP_OK;
+    // Wait for IP address
+    ESP_LOGI(TAG, "Waiting for IP address...");
+    network_event_bits = xEventGroupWaitBits(network_event_group, 
+                                             NETWORK_IPV4_OBTAINED_BIT | 
+                                             NETWORK_IPV6_OBTAINED_BIT, 
+                                             pdFALSE, 
+                                             pdTRUE, 
+                                             CONNECTION_TIMEOUT_SEC * 1000 / 
+                                                portTICK_PERIOD_MS);
+    if (network_event_bits & NETWORK_IPV4_OBTAINED_BIT) {
+        ESP_LOGI(TAG, "Connected to IPv4 network");
+    } else if (network_event_bits & NETWORK_IPV6_OBTAINED_BIT) {
+        ESP_LOGI(TAG, "Connected to IPv6 network");
+    } else {
+        ESP_LOGE(TAG, "Failed to obtain IP address");
+        return false;
+    }
+
+    return true;
 }
 
 // Main app entrypoint
@@ -372,6 +84,7 @@ void app_main(void)
     char recv_buf[RX_BUF_SIZE];
     uint32_t recv_total;
     ssize_t recv_len;
+    EventGroupHandle_t network_event_group;
 
     // Hints for DNS lookup
     struct addrinfo hints = {
@@ -385,15 +98,15 @@ void app_main(void)
         .tv_usec = 0
     };
 
-    // Set log levels
-    esp_log_level_set("wifi", LOG_LEVEL);
-    esp_log_level_set(TAG, LOG_LEVEL);
-
     // Welcome message (after delay to allow serial connection)
     vTaskDelay(2000 / portTICK_PERIOD_MS);
     ESP_LOGI(TAG, "Starting HTTP GET request demo");
 
+    // Initialize event group
+    network_event_group = xEventGroupCreate();
+
     // Initialize NVS: ESP32 WiFi driver uses NVS to store WiFi settings
+    // Erase NVS partition if it's out of free space or new version
     esp_ret = nvs_flash_init();
     if (esp_ret == ESP_ERR_NVS_NO_FREE_PAGES || esp_ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
       ESP_ERROR_CHECK(nvs_flash_erase());
@@ -401,17 +114,38 @@ void app_main(void)
     }
     ESP_ERROR_CHECK(esp_ret);
 
-    // Initialize WiFi in station mode
-    esp_ret = wifi_init_sta();
+    // Initialize TCP/IP network interface (only call once in application)
+    // Must be called prior to initializing the network driver!
+    esp_ret = esp_netif_init();
+    ESP_ERROR_CHECK(esp_ret);
+
+    // Create default event loop that runs in the background
+    // Must be running prior to initializing the network driver!
+    esp_ret = esp_event_loop_create_default();
+    ESP_ERROR_CHECK(esp_ret);
+
+    // Initialize WiFi
+    esp_ret = network_init(network_event_group);
     ESP_ERROR_CHECK(esp_ret);
 
     // Do forever: perform HTTP GET request
     while (1) {
 
+        // Make sure network is connected and has an IP address
+        if (!wait_for_network(network_event_group)) {
+            ESP_LOGE(TAG, "Failed to connect to WiFi. Reconnecting...");
+            esp_ret = network_reconnect();
+            if (esp_ret != ESP_OK) {
+                ESP_LOGE(TAG, "Failed to reconnect WiFi (%d)", esp_ret);
+            }
+            continue;
+        }
+
         // Perform DNS lookup
         ret = getaddrinfo(WEB_HOST, WEB_PORT, &hints, &dns_res);
         if (ret != 0 || dns_res== NULL) {
             ESP_LOGE(TAG, "DNS lookup failed (%d)", ret);
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
             continue;
         }
 
@@ -433,6 +167,7 @@ void app_main(void)
         sock = socket(dns_res->ai_family, dns_res->ai_socktype, dns_res->ai_protocol);
         if (sock < 0) {
             ESP_LOGE(TAG, "Failed to create socket (%d): %s", errno, strerror(errno));
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
             continue;
         }
 
@@ -441,6 +176,7 @@ void app_main(void)
         if (ret < 0) {
             ESP_LOGE(TAG, "Failed to set socket send timeout (%d): %s", errno, strerror(errno));
             close(sock);
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
             continue;
         }
 
@@ -449,6 +185,7 @@ void app_main(void)
         if (ret < 0) {
             ESP_LOGE(TAG, "Failed to set socket receive timeout (%d): %s", errno, strerror(errno));
             close(sock);
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
             continue;
         }
 
@@ -457,6 +194,7 @@ void app_main(void)
         if (ret < 0) {
             ESP_LOGE(TAG, "Failed to connect to server (%d): %s", errno, strerror(errno));
             close(sock);
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
             continue;
         }
 
@@ -469,6 +207,7 @@ void app_main(void)
         if (ret < 0) {
             ESP_LOGE(TAG, "Failed to send HTTP GET request (%d): %s", errno, strerror(errno));
             close(sock);
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
             continue;
         }
 
@@ -502,5 +241,12 @@ void app_main(void)
 
         // Wait before trying again
         vTaskDelay(5000 / portTICK_PERIOD_MS);
+
+        // TEST - stop network to test reconnect
+        esp_ret = network_stop();
+        if (esp_ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to stop network driver (%d)", esp_ret);
+            continue;
+        }
     }
 }
