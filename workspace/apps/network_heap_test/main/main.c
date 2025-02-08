@@ -32,7 +32,7 @@
 static const char *TAG = "http_request";
 
 // Wait for Ethernet to connect
-static bool wait_for_ethernet(EventGroupHandle_t network_event_group)
+static bool wait_for_network(EventGroupHandle_t network_event_group)
 {
     EventBits_t network_event_bits;
 
@@ -102,13 +102,19 @@ void app_main(void)
     esp_ret = esp_event_loop_create_default();
     ESP_ERROR_CHECK(esp_ret);
 
-    // Initialize virtual Ethernet (for QEMU)
-    esp_ret = wifi_sta_init(network_event_group);
-    ESP_ERROR_CHECK(esp_ret);
+    // // Initialize virtual Ethernet (for QEMU)
+    // esp_ret = wifi_sta_init(network_event_group);
+    // ESP_ERROR_CHECK(esp_ret);
 
     while (1) {
 
-        wifi_sta_reconnect();
+        esp_ret = wifi_sta_heap_check(network_event_group);
+        if (esp_ret != ESP_OK) {
+            ESP_LOGE(TAG, "Could not do heap check");
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
+        }
+
+        // wifi_sta_reconnect();
 
         vTaskDelay(50 / portTICK_PERIOD_MS);
     }

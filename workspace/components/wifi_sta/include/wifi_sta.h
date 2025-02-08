@@ -51,4 +51,7 @@ esp_err_t wifi_sta_stop(void);
  */
 esp_err_t wifi_sta_reconnect(void);
 
+// %%%TEST
+esp_err_t wifi_sta_heap_check(EventGroupHandle_t event_handle);
+
 #endif // WIFI_H
