@@ -1,4 +1,78 @@
-TODO: add stuff here
+> **IMPORTANT!** This material is a work in progress.
+
+## TEMPORARY: How to Test WAP3
+
+ 1. Follow the instructions below for setting up the [Development Environment](#development-environment) for ESP-IDF
+ 2. In a terminal (in the Docker container), navigate into the *http_request/* directory.
+
+```sh
+cd /workspace/apps/http_request/
+```
+
+ 3. Change your target in *sdkconfig.defaults* to your intended ESP32 variant. For example:
+
+```sh
+CONFIG_IDF_TARGET="esp32s3"
+```
+
+ 4. Bring up *menuconfig*
+
+```sh
+idf.py menuconfig
+```
+
+ 5. Adjust the settings in **Component config → WiFi STA Configuration**
+    * Enable **Connect using WiFi**
+    * Set **IP version** (IPv4, IPv6, or either)
+    * Change **Minimum WiFi authentication mode** to **WPA3 PSK**
+    * Set your **WiFi SSID** and **WiFi password** (if using PSK)
+    * Set **SAE mode** and **Password identifier for SAE** (if applicable)
+ 6. Press `q` and `y` to save and exit
+ 7. Build the project:
+
+```sh
+idf.py build
+```
+
+ 8. Back on your host computer (outside the container), navigate to this directory and activate the virtual environment:
+
+*Linux/macOS:*
+
+```sh
+source venv/bin/activate
+```
+
+*Windows (PowerShell):*
+
+```bat
+venv\Scripts\activate
+```
+
+ 9. Flash the project (change `<SERIAL_PORT>` to the serial port of your ESP32, such as `COM3` for Windows, `/dev/ttyUSB0` for Linux, or `/dev/cu.usbserial-1401` for macOS):
+
+*ESP32-S3* (bootloader at 0x0):
+
+```sh
+cd workspace/apps/http_request
+python -m esptool --port "<SERIAL_PORT>" --chip auto --baud 921600 --before default_reset --after hard_reset write_flash --flash_mode dio --flash_freq 40m --flash_size detect 0x0 build/bootloader/bootloader.bin 0x8000 build/partition_table/partition-table.bin 0x10000 build/app.bin
+```
+
+*Other ESP32 variants* (bootloader at 0x1000):
+
+```sh
+cd workspace/apps/http_request
+python -m esptool --port "<SERIAL_PORT>" --chip auto --baud 921600 --before default_reset --after hard_reset write_flash --flash_mode dio --flash_freq 40m --flash_size detect 0x1000 build/bootloader/bootloader.bin 0x8000 build/partition_table/partition-table.bin 0x10000 build/app.bin
+```
+
+10. Monitor with a serial connection (change `<SERIAL_PORT>` to the serial port of your ESP32):
+
+```sh
+python -m serial.tools.miniterm "<SERIAL_PORT>" 115200
+```
+
+11. You should see the contents of [example.com](https://example.com/index.html) printed to the console after a few moments.
+12. If you see any errors (especially as it relates to WPA3), please let me know in the **issues** or submit a **pull request** if you know how to fix it!
+
 
 ## Development Environment
 
@@ -12,7 +86,7 @@ You have a few options for using this development environment:
  2. Run the image. In your local VS Code, install the [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) or [Remote - SSH extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-ssh). Connect to the running container. Select *File > Open Workspace from File...* and select the */zephyr.code-workspace* file when prompted.
  3. Edit files locally (e.g. with VS Code) and log into the container via SSH to build and run the emulator.
     * Username: `root`
-    * Password: `fota`
+    * Password: `espidf`
 
 ## Getting Started
 
@@ -28,7 +102,7 @@ Windows users will likely need to install the [virtual COM port (VCP) drivers fr
 
 Open a terminal, navigate to this directory, and install the following dependencies:
 
-Linux/macOS:
+*Linux/macOS:*
 
 ```sh
 python -m venv venv
@@ -36,7 +110,7 @@ source venv/bin/activate
 python -m pip install pyserial==3.5 esptool==4.8.1
 ```
 
-Windows (PowerShell):
+*Windows (PowerShell):*
 
 ```bat
 Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy Unrestricted -Force
