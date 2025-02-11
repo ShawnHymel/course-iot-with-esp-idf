@@ -1,4 +1,4 @@
-/*
+/**
  * SPDX-FileCopyrightText: 2025 Shawn Hymel
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -33,7 +33,7 @@ static const char *REQUEST = "GET " WEB_PATH " HTTP/1.0\r\n"
 // Tag for debug messages
 static const char *TAG = "http_request";
 
-// Wait for WiFi to connect
+// Wait for network connection (with IP address)
 static bool wait_for_network(EventGroupHandle_t network_event_group)
 {
     EventBits_t network_event_bits;
@@ -124,7 +124,7 @@ void app_main(void)
     esp_ret = esp_event_loop_create_default();
     ESP_ERROR_CHECK(esp_ret);
 
-    // Initialize WiFi
+    // Initialize network connection
     esp_ret = network_init(network_event_group);
     ESP_ERROR_CHECK(esp_ret);
 
@@ -241,12 +241,5 @@ void app_main(void)
 
         // Wait before trying again
         vTaskDelay(5000 / portTICK_PERIOD_MS);
-
-        // TEST - stop network to test reconnect
-        esp_ret = network_stop();
-        if (esp_ret != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to stop network driver (%d)", esp_ret);
-            continue;
-        }
     }
 }
