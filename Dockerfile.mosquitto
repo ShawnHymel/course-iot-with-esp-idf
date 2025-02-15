@@ -49,6 +49,7 @@ RUN apt-get -y update && \
     nano \
     yarn \
     gdebi-core \
+    openssl \
     mosquitto \
     mosquitto-clients
 
@@ -71,6 +72,43 @@ RUN chmod +x /generate_mosquitto_password.sh && \
 RUN mkdir -p /run/mosquitto && \
     chown mosquitto:mosquitto /run/mosquitto && \
     chmod 755 /run/mosquitto
+
+# Generate CA Key and Certificate
+RUN openssl genrsa -out /etc/mosquitto/ca_certificates/ca.key 4096 && \
+    openssl req \
+        -new -x509 -days 3650 \
+        -key /etc/mosquitto/ca_certificates/ca.key \
+        -out /etc/mosquitto/ca_certificates/ca.crt \
+        -subj "/C=US/ST=Colorado/L=Denver/O=Mosquitto/CN=localhost"
+
+# Generate Server Key and Certificate Signing Request (CSR)
+RUN openssl genrsa -out /etc/mosquitto/certs/server.key 4096 && \
+    openssl req \
+        -new \
+        -key /etc/mosquitto/certs/server.key \
+        -out /etc/mosquitto/certs/server.csr \
+        -subj "/C=US/ST=Colorado/L=Denver/O=Mosquitto/CN=localhost"
+
+# Generate Server Certificate
+# RUN openssl x509 \
+#         -req -CAcreateserial -days 36500 \
+#         -in /etc/mosquitto/certs/server.csr \
+#         -CA /etc/mosquitto/ca_certificates/ca.crt \
+#         -CAkey /etc/mosquitto/ca_certificates/ca.key \
+#         -out /etc/mosquitto/certs/server.crt && \
+#     chown -R mosquitto:mosquitto /etc/mosquitto/ca_certificates && \
+#     chmod 755 /etc/mosquitto/ca_certificates && \
+#     chmod 644 /etc/mosquitto/ca_certificates/ca.crt && \
+#     chmod 600 /etc/mosquitto/ca_certificates/ca.key && \
+#     chown -R mosquitto:mosquitto /etc/mosquitto/certs && \
+#     chmod 755 /etc/mosquitto/certs && \
+#     chmod 644 /etc/mosquitto/certs/server.crt && \
+#     chmod 600 /etc/mosquitto/certs/server.key
+
+# Alternatively, copy it pre-generated certificates and key
+COPY scripts/mosquitto/ca.crt /etc/mosquitto/ca_certificates/ca.crt
+COPY scripts/mosquitto/server.crt /etc/mosquitto/certs/server.crt
+COPY scripts/mosquitto/server.key /etc/mosquitto/certs/server.key
 
 #-------------------------------------------------------------------------------
 # MQTTX Web

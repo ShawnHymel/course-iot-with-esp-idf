@@ -108,7 +108,8 @@ void app_main(void)
     // Initialize NVS: ESP32 WiFi driver uses NVS to store WiFi settings
     // Erase NVS partition if it's out of free space or new version
     esp_ret = nvs_flash_init();
-    if (esp_ret == ESP_ERR_NVS_NO_FREE_PAGES || esp_ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    if (esp_ret == ESP_ERR_NVS_NO_FREE_PAGES || 
+        esp_ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
       ESP_ERROR_CHECK(nvs_flash_erase());
       esp_ret = nvs_flash_init();
     }
