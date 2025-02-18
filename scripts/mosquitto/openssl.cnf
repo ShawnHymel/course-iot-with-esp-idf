@@ -1,0 +1,20 @@
+[ req ]
+default_bits        = 4096
+prompt              = no
+default_md          = sha256
+distinguished_name  = req_distinguished_name
+req_extensions      = req_ext
+
+[ req_distinguished_name ]
+countryName = US
+stateOrProvinceName = Colorado
+localityName = Denver
+organizationName = mosquitto
+commonName = localhost
+
+[ req_ext ]
+subjectAltName = @alt_names
+
+[ alt_names ]
+DNS.1 = localhost
+DNS.2 = mosquitto.local

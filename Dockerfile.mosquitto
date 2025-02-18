@@ -51,7 +51,14 @@ RUN apt-get -y update && \
     gdebi-core \
     openssl \
     mosquitto \
-    mosquitto-clients
+    mosquitto-clients \
+    avahi-daemon \
+    avahi-utils \
+    dbus
+    # build-essential \
+    # libssl-dev \
+    # libcjson-dev \
+    # libwebsockets-dev \
 
 # Clean up
 RUN apt-get clean && \
@@ -73,13 +80,17 @@ RUN mkdir -p /run/mosquitto && \
     chown mosquitto:mosquitto /run/mosquitto && \
     chmod 755 /run/mosquitto
 
+# Copy in OpenSSL configuration file
+RUN mkdir -p /etc/ssl/
+COPY scripts/mosquitto/openssl.cnf /etc/ssl/openssl.cnf
+
 # Generate CA Key and Certificate
 RUN openssl genrsa -out /etc/mosquitto/ca_certificates/ca.key 4096 && \
     openssl req \
-        -new -x509 -days 3650 \
+        -new -x509 -days 36500 \
         -key /etc/mosquitto/ca_certificates/ca.key \
         -out /etc/mosquitto/ca_certificates/ca.crt \
-        -subj "/C=US/ST=Colorado/L=Denver/O=Mosquitto/CN=localhost"
+        -subj "/C=US/ST=Colorado/L=Denver/O=mosquitto/CN=custom-ca"
 
 # Generate Server Key and Certificate Signing Request (CSR)
 RUN openssl genrsa -out /etc/mosquitto/certs/server.key 4096 && \
@@ -87,28 +98,32 @@ RUN openssl genrsa -out /etc/mosquitto/certs/server.key 4096 && \
         -new \
         -key /etc/mosquitto/certs/server.key \
         -out /etc/mosquitto/certs/server.csr \
-        -subj "/C=US/ST=Colorado/L=Denver/O=Mosquitto/CN=localhost"
+        -config /etc/ssl/openssl.cnf
 
-# Generate Server Certificate
-# RUN openssl x509 \
-#         -req -CAcreateserial -days 36500 \
-#         -in /etc/mosquitto/certs/server.csr \
-#         -CA /etc/mosquitto/ca_certificates/ca.crt \
-#         -CAkey /etc/mosquitto/ca_certificates/ca.key \
-#         -out /etc/mosquitto/certs/server.crt && \
-#     chown -R mosquitto:mosquitto /etc/mosquitto/ca_certificates && \
-#     chmod 755 /etc/mosquitto/ca_certificates && \
-#     chmod 644 /etc/mosquitto/ca_certificates/ca.crt && \
-#     chmod 600 /etc/mosquitto/ca_certificates/ca.key && \
-#     chown -R mosquitto:mosquitto /etc/mosquitto/certs && \
-#     chmod 755 /etc/mosquitto/certs && \
-#     chmod 644 /etc/mosquitto/certs/server.crt && \
-#     chmod 600 /etc/mosquitto/certs/server.key
+# Option 1: Generate Server Certificate (expires in 100 years)
+RUN openssl x509 \
+        -req \
+        -CAcreateserial \
+        -days 36500 \
+        -in /etc/mosquitto/certs/server.csr \
+        -CA /etc/mosquitto/ca_certificates/ca.crt \
+        -CAkey /etc/mosquitto/ca_certificates/ca.key \
+        -out /etc/mosquitto/certs/server.crt \
+        -extensions req_ext \
+        -extfile /etc/ssl/openssl.cnf && \
+    chown -R mosquitto:mosquitto /etc/mosquitto/ca_certificates && \
+    chmod 755 /etc/mosquitto/ca_certificates && \
+    chmod 644 /etc/mosquitto/ca_certificates/ca.crt && \
+    chmod 600 /etc/mosquitto/ca_certificates/ca.key && \
+    chown -R mosquitto:mosquitto /etc/mosquitto/certs && \
+    chmod 755 /etc/mosquitto/certs && \
+    chmod 644 /etc/mosquitto/certs/server.crt && \
+    chmod 600 /etc/mosquitto/certs/server.key
 
-# Alternatively, copy it pre-generated certificates and key
-COPY scripts/mosquitto/ca.crt /etc/mosquitto/ca_certificates/ca.crt
-COPY scripts/mosquitto/server.crt /etc/mosquitto/certs/server.crt
-COPY scripts/mosquitto/server.key /etc/mosquitto/certs/server.key
+# Option 2: Copy existing, pre-generated certificates and key
+# COPY scripts/mosquitto/ca.crt /etc/mosquitto/ca_certificates/ca.crt
+# COPY scripts/mosquitto/server.crt /etc/mosquitto/certs/server.crt
+# COPY scripts/mosquitto/server.key /etc/mosquitto/certs/server.key
 
 #-------------------------------------------------------------------------------
 # MQTTX Web
@@ -135,6 +150,12 @@ RUN cd /tmp && \
     cp -r dist/* /var/www/mqttx/ && \
     rm -rf /tmp/MQTTX-${MQTTX_VERSION} && \
     rm -f /tmp/mqttx.tar.gz
+
+#-------------------------------------------------------------------------------
+# Configure Avahi
+
+# Copy the Avahi configuration file
+COPY scripts/mosquitto/avahi-daemon.conf /etc/avahi/avahi-daemon.conf
 
 #-------------------------------------------------------------------------------
 # Entrypoint

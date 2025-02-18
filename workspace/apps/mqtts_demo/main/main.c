@@ -8,6 +8,7 @@
  #include "esp_netif.h"
  #include "mqtt_client.h"
  #include "nvs_flash.h"
+ #include "mdns.h"
 
  #include "network_wrapper.h"
 
@@ -18,17 +19,21 @@ static const char *TAG = "mqtt_demo";
 #define CONNECTION_TIMEOUT_SEC  10  // Delay to wait for connection (sec)
 
 // MQTT settings
-#define MQTT_BROKER_URL         "mqtt://10.0.0.100"
-#define MQTT_BROKER_PORT        1883
+#define MQTT_BROKER_URL         "mqtts://localhost"
+#define MQTT_BROKER_PORT        8883
 #define MQTT_USERNAME           "iot"
 #define MQTT_PASSWORD           "mosquitto"
 #define MQTT_QOS                2               // Quality of Service (0, 1, 2)
-#define MQTT_PUBLISH_TOPIC      "/test/out"
-#define MQTT_SUBSCRIBE_TOPIC    "/test/in"
+#define MQTT_PUBLISH_TOPIC      "/test/esp-pub"
+#define MQTT_SUBSCRIBE_TOPIC    "/test/esp-sub"
 #define MQTT_TEST_MSG           "Hello, MQTT!"
 
 // Event group bits
 #define MQTT_CONNECTED_BIT      BIT0
+
+// Load CA certificate from binary data
+extern const uint8_t mqtt_ca_cert_start[]   asm("_binary_ca_crt_start");
+extern const uint8_t mqtt_ca_cert_end[]     asm("_binary_ca_crt_end");
 
 // Static global variables
 static EventGroupHandle_t s_mqtt_event_group = NULL;
@@ -77,6 +82,9 @@ void app_main(void)
     esp_err_t esp_ret;
     int msg_id;
     EventGroupHandle_t network_event_group;
+
+    // %%%TEST
+    esp_log_level_set("*", ESP_LOG_VERBOSE);
 
     // Welcome message (after delay to allow serial connection)
     vTaskDelay(2000 / portTICK_PERIOD_MS);
@@ -135,12 +143,42 @@ void app_main(void)
         }
     }
 
+    // Initialize mDNS
+    esp_ret = mdns_init();
+    if (esp_ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize mDNS (%d)", esp_ret);
+        abort();
+    }
+
+    // Get IP address of mosquitto server
+    esp_ip4_addr_t addr;
+
+    esp_err_t err = mdns_query_a("mosquitto", 2000,  &addr);
+    if(err){
+        if(err == ESP_ERR_NOT_FOUND){
+            printf("Host was not found!");
+            return;
+        }
+        printf("Query Failed");
+        return;
+    }
+
+    // Print IP address
+    char ip_str[16];
+    esp_ip4addr_ntoa(&addr, ip_str, sizeof(ip_str));
+    printf("IP address: %s\n", ip_str);
+
     // Configure MQTT client
     esp_mqtt_client_config_t mqtt_cfg = {
-        .broker.address.uri = MQTT_BROKER_URL,
-        .broker.address.port = MQTT_BROKER_PORT,
-        .credentials.username = MQTT_USERNAME,
-        .credentials.authentication.password = MQTT_PASSWORD,
+        // .broker.address.uri = MQTT_BROKER_URL,
+        .broker.address.hostname = "mosquitto.local",
+        .broker.address.transport = MQTT_TRANSPORT_OVER_SSL,
+        .broker.address.port = 8883,
+        .broker.verification.use_global_ca_store = false,
+        .broker.verification.certificate = (const char *)mqtt_ca_cert_start,
+        .broker.verification.certificate_len = mqtt_ca_cert_end - mqtt_ca_cert_start,
+        .credentials.username = "iot",
+        .credentials.authentication.password = "mosquitto",
     };
 
     // Initialize MQTT client
