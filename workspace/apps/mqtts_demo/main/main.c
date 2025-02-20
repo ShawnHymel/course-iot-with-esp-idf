@@ -8,25 +8,28 @@
  #include "esp_netif.h"
  #include "mqtt_client.h"
  #include "nvs_flash.h"
- #include "mdns.h"
 
  #include "network_wrapper.h"
 
  // Tag for debug messages
-static const char *TAG = "mqtt_demo";
+static const char *TAG = "mqtts_demo";
 
 // Network settings
 #define CONNECTION_TIMEOUT_SEC  10  // Delay to wait for connection (sec)
 
 // MQTT settings
-#define MQTT_BROKER_URL         "mqtts://localhost"
+#if CONFIG_WIFI_STA_CONNECT
+# define MQTT_BROKER_HOSTNAME    "10.0.0.100"   // Host address on WiFi network
+#elif CONFIG_ETHERNET_QEMU_CONNECT
+#define MQTT_BROKER_HOSTNAME    "10.0.2.2"      // QEMU host IP address
+#endif
 #define MQTT_BROKER_PORT        8883
+#define MQTT_COMMON_NAME        "localhost"
 #define MQTT_USERNAME           "iot"
 #define MQTT_PASSWORD           "mosquitto"
 #define MQTT_QOS                2               // Quality of Service (0, 1, 2)
-#define MQTT_PUBLISH_TOPIC      "/test/esp-pub"
-#define MQTT_SUBSCRIBE_TOPIC    "/test/esp-sub"
-#define MQTT_TEST_MSG           "Hello, MQTT!"
+#define MQTT_TEST_TOPIC         "my_topic/sensor_data"
+#define MQTT_TEST_MSG           "{\"temperature\": 25.0, \"humidity\": 50.0}"
 
 // Event group bits
 #define MQTT_CONNECTED_BIT      BIT0
@@ -48,28 +51,61 @@ static void mqtt_event_handler(void *handler_args,
 
     // Determine event type
     switch ((esp_mqtt_event_id_t)event_id) {
+
+        // Error in MQTT connection
+        case MQTT_EVENT_ERROR:
+            ESP_LOGE(TAG, "MQTT error:");
+            ESP_LOGE(TAG, 
+                     "  Error type: %d", 
+                     event->error_handle->error_type);
+            ESP_LOGE(TAG, 
+                     "  Error return code: %d", 
+                     event->error_handle->connect_return_code);
+            ESP_LOGE(TAG, 
+                     "  Socket errno: %d", 
+                     event->error_handle->esp_transport_sock_errno);
+            break;
+
+        // Connected to MQTT broker
         case MQTT_EVENT_CONNECTED:
             ESP_LOGI(TAG, "Connected to MQTT broker");
             xEventGroupSetBits(s_mqtt_event_group, MQTT_CONNECTED_BIT);
             break;
+
+        // Disconnected from MQTT broker
         case MQTT_EVENT_DISCONNECTED:
             ESP_LOGI(TAG, "Disconnected from MQTT broker");
             xEventGroupClearBits(s_mqtt_event_group, MQTT_CONNECTED_BIT);
             break;
+
+        // Subscribed to topic
         case MQTT_EVENT_SUBSCRIBED:
             ESP_LOGI(TAG, "Subscribed to topic");
             break;
+
+        // Unsubscribed from topic
         case MQTT_EVENT_UNSUBSCRIBED:
             ESP_LOGI(TAG, "Unsubscribed from topic");
             break;
+
+        // Published message to broker
         case MQTT_EVENT_PUBLISHED:
             ESP_LOGI(TAG, "Published message to broker");
             break;
+
+        // Received message from broker
         case MQTT_EVENT_DATA:
             ESP_LOGI(TAG, "Received message from broker");
             ESP_LOGI(TAG, "  Topic: %.*s", event->topic_len, event->topic);
             ESP_LOGI(TAG, "  Data: %.*s", event->data_len, event->data);
             break;
+
+        // Before connecting to MQTT broker
+        case MQTT_EVENT_BEFORE_CONNECT:
+            ESP_LOGI(TAG, "Connecting to MQTT broker...");
+            break;
+
+        // Unhandled event
         default:
             ESP_LOGI(TAG, "Unhandled MQTT event: %li", event_id);
             break;
@@ -82,9 +118,6 @@ void app_main(void)
     esp_err_t esp_ret;
     int msg_id;
     EventGroupHandle_t network_event_group;
-
-    // %%%TEST
-    esp_log_level_set("*", ESP_LOG_VERBOSE);
 
     // Welcome message (after delay to allow serial connection)
     vTaskDelay(2000 / portTICK_PERIOD_MS);
@@ -143,40 +176,29 @@ void app_main(void)
         }
     }
 
-    // Initialize mDNS
-    esp_ret = mdns_init();
-    if (esp_ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize mDNS (%d)", esp_ret);
-        abort();
-    }
-
-    // Get IP address of mosquitto server
-    esp_ip4_addr_t addr;
-
-    esp_err_t err = mdns_query_a("mosquitto", 2000,  &addr);
-    if(err){
-        if(err == ESP_ERR_NOT_FOUND){
-            printf("Host was not found!");
-            return;
-        }
-        printf("Query Failed");
-        return;
-    }
-
-    // Print IP address
-    char ip_str[16];
-    esp_ip4addr_ntoa(&addr, ip_str, sizeof(ip_str));
-    printf("IP address: %s\n", ip_str);
-
     // Configure MQTT client
+    // esp_mqtt_client_config_t mqtt_cfg = {
+    //     .broker.address.hostname = MQTT_BROKER_HOSTNAME,
+    //     .broker.address.transport = MQTT_TRANSPORT_OVER_SSL,
+    //     .broker.address.port = MQTT_BROKER_PORT,
+    //     .broker.verification.use_global_ca_store = false,
+    //     .broker.verification.certificate = (const char *)mqtt_ca_cert_start,
+    //     .broker.verification.certificate_len = mqtt_ca_cert_end - mqtt_ca_cert_start,
+    //     .broker.verification.common_name = MQTT_COMMON_NAME,
+    //     .credentials.username = "iot",
+    //     .credentials.authentication.password = "mosquitto",
+    // };
+    // %%%TEST%%%
+    esp_log_level_set("*", ESP_LOG_VERBOSE);
     esp_mqtt_client_config_t mqtt_cfg = {
-        // .broker.address.uri = MQTT_BROKER_URL,
-        .broker.address.hostname = "mosquitto.local",
+        .broker.address.hostname = "10.0.2.2",
         .broker.address.transport = MQTT_TRANSPORT_OVER_SSL,
         .broker.address.port = 8883,
         .broker.verification.use_global_ca_store = false,
         .broker.verification.certificate = (const char *)mqtt_ca_cert_start,
         .broker.verification.certificate_len = mqtt_ca_cert_end - mqtt_ca_cert_start,
+        .broker.verification.skip_cert_common_name_check = false,
+        .broker.verification.common_name = "localhost",
         .credentials.username = "iot",
         .credentials.authentication.password = "mosquitto",
     };
@@ -204,17 +226,15 @@ void app_main(void)
     }
 
     // Wait for MQTT client to connect
-    ESP_LOGI(TAG, "Waiting to connecting to MQTT broker...");
     xEventGroupWaitBits(s_mqtt_event_group, 
                         MQTT_CONNECTED_BIT, 
                         pdTRUE, 
                         pdTRUE, 
                         portMAX_DELAY);
-    ESP_LOGI(TAG, "Connected to MQTT broker");
 
     // Subscribe to a topic
     msg_id = esp_mqtt_client_subscribe(mqtt_client, 
-                                       MQTT_SUBSCRIBE_TOPIC, 
+                                       MQTT_TEST_TOPIC, 
                                        MQTT_QOS);
     if (msg_id < 0) {
         ESP_LOGE(TAG, "Error (%d): Failed to subscribe to topic", msg_id);
@@ -227,7 +247,7 @@ void app_main(void)
 
         // Publish message to MQTT broker
         msg_id = esp_mqtt_client_publish(mqtt_client, 
-                                         MQTT_PUBLISH_TOPIC, 
+                                         MQTT_TEST_TOPIC, 
                                          MQTT_TEST_MSG, 
                                          0,         // Length (0 = auto detect)
                                          MQTT_QOS,  // QoS

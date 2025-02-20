@@ -51,14 +51,7 @@ RUN apt-get -y update && \
     gdebi-core \
     openssl \
     mosquitto \
-    mosquitto-clients \
-    avahi-daemon \
-    avahi-utils \
-    dbus
-    # build-essential \
-    # libssl-dev \
-    # libcjson-dev \
-    # libwebsockets-dev \
+    mosquitto-clients
 
 # Clean up
 RUN apt-get clean && \
@@ -150,12 +143,6 @@ RUN cd /tmp && \
     cp -r dist/* /var/www/mqttx/ && \
     rm -rf /tmp/MQTTX-${MQTTX_VERSION} && \
     rm -f /tmp/mqttx.tar.gz
-
-#-------------------------------------------------------------------------------
-# Configure Avahi
-
-# Copy the Avahi configuration file
-COPY scripts/mosquitto/avahi-daemon.conf /etc/avahi/avahi-daemon.conf
 
 #-------------------------------------------------------------------------------
 # Entrypoint

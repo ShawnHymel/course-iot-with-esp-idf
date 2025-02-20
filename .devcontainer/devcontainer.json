@@ -10,16 +10,17 @@
             ]
         }
     },
-    "forwardPorts": [
-        // None, as we are using --network=host
-    ],
     "workspaceMount": "source=${localWorkspaceFolder}/workspace,target=/workspace,type=bind,consistency=cached",
     "workspaceFolder": "/workspace",
-    // "postStartCommand": "code /esp-idf.code-workspace",
     "runArgs": [
         "--rm",
         "-it",
-        "--network=host"
+        "--network=bridge",
+        "-p", "1883:1883",
+        "-p", "8080:8080",
+        "-p", "8081:8081",
+        "-p", "8800:8800",
+        "-p", "8883:8883"
     ],
     "remoteUser": "root"
 }

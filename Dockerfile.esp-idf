@@ -1,7 +1,11 @@
 # Settings
 ARG DEBIAN_VERSION=stable-20241223-slim
 ARG PASSWORD="espidf"
+ARG PASSWORD="mosquitto"
+ARG MOSQUITTO_USERNAME="iot"
+ARG MOSQUITTO_PASSWORD="mosquitto"
 ARG IDF_VERSION=5.4
+ARG MOSQUITTO_VERSION=2.0.20
 ARG VS_CODE_SERVER_VERSION=4.93.1
 ARG VS_CODE_SERVER_PORT=8800
 ARG VS_CODE_EXT_CPPTOOLS_VERSION=1.22.10
@@ -16,8 +20,12 @@ FROM debian:${DEBIAN_VERSION}
 
 # Redeclare arguments after FROM
 ARG TARGETARCH
+ARG HOSTNAME
 ARG PASSWORD
+ARG MOSQUITTO_USERNAME
+ARG MOSQUITTO_PASSWORD
 ARG IDF_VERSION
+ARG MOSQUITTO_VERSION
 ARG VS_CODE_SERVER_VERSION
 ARG VS_CODE_SERVER_PORT
 ARG VS_CODE_EXT_CPPTOOLS_VERSION
@@ -68,7 +76,9 @@ RUN apt-get -y update && \
     libsdl2-2.0-0 \
     libslirp0 \
     libssl-dev \
-    libusb-1.0-0
+    libusb-1.0-0 \
+    mosquitto \
+    mosquitto-clients
 
 # Set root password
 RUN echo "root:${PASSWORD}" | chpasswd
@@ -160,6 +170,70 @@ RUN cd /tmp && \
 
 # Copy workspace configuration
 COPY scripts/esp-idf/esp-idf.code-workspace /esp-idf.code-workspace
+
+#-------------------------------------------------------------------------------
+# Mosquitto Configuration
+
+# Copy the Mosquitto configuration file
+COPY scripts/esp-idf/mosquitto.conf /etc/mosquitto/mosquitto.conf
+
+# Generate the password file with default username and password
+COPY scripts/esp-idf/generate_mosquitto_password.sh /generate_mosquitto_password.sh
+RUN chmod +x /generate_mosquitto_password.sh && \
+    /generate_mosquitto_password.sh ${MOSQUITTO_USERNAME} ${MOSQUITTO_PASSWORD}
+
+# Configure PID file
+RUN mkdir -p /run/mosquitto && \
+    chown mosquitto:mosquitto /run/mosquitto && \
+    chmod 755 /run/mosquitto
+
+# Copy in OpenSSL configuration file
+RUN mkdir -p /etc/ssl/
+COPY scripts/esp-idf/openssl.cnf /etc/ssl/openssl.cnf
+
+# Add host's hostname to SAN list in OpenSSL configuration
+RUN echo "DNS.2 = ${HOSTNAME}.local" >> /etc/ssl/openssl.cnf
+
+# Generate CA Key and Certificate
+RUN openssl genrsa -out /etc/mosquitto/ca_certificates/ca.key 4096 && \
+    openssl req \
+        -new -x509 -days 36500 \
+        -key /etc/mosquitto/ca_certificates/ca.key \
+        -out /etc/mosquitto/ca_certificates/ca.crt \
+        -subj "/C=US/ST=Colorado/L=Denver/O=mosquitto/CN=custom-ca"
+
+# Generate Server Key and Certificate Signing Request (CSR)
+RUN openssl genrsa -out /etc/mosquitto/certs/server.key 4096 && \
+    openssl req \
+        -new \
+        -key /etc/mosquitto/certs/server.key \
+        -out /etc/mosquitto/certs/server.csr \
+        -config /etc/ssl/openssl.cnf
+
+# Option 1: Generate Server Certificate (expires in 100 years)
+RUN openssl x509 \
+        -req \
+        -CAcreateserial \
+        -days 36500 \
+        -in /etc/mosquitto/certs/server.csr \
+        -CA /etc/mosquitto/ca_certificates/ca.crt \
+        -CAkey /etc/mosquitto/ca_certificates/ca.key \
+        -out /etc/mosquitto/certs/server.crt \
+        -extensions req_ext \
+        -extfile /etc/ssl/openssl.cnf && \
+    chown -R mosquitto:mosquitto /etc/mosquitto/ca_certificates && \
+    chmod 755 /etc/mosquitto/ca_certificates && \
+    chmod 644 /etc/mosquitto/ca_certificates/ca.crt && \
+    chmod 600 /etc/mosquitto/ca_certificates/ca.key && \
+    chown -R mosquitto:mosquitto /etc/mosquitto/certs && \
+    chmod 755 /etc/mosquitto/certs && \
+    chmod 644 /etc/mosquitto/certs/server.crt && \
+    chmod 600 /etc/mosquitto/certs/server.key
+
+# Option 2: Copy existing, pre-generated certificates and key
+# COPY scripts/mosquitto/ca.crt /etc/mosquitto/ca_certificates/ca.crt
+# COPY scripts/mosquitto/server.crt /etc/mosquitto/certs/server.crt
+# COPY scripts/mosquitto/server.key /etc/mosquitto/certs/server.key
 
 #-------------------------------------------------------------------------------
 # Optional Settings
