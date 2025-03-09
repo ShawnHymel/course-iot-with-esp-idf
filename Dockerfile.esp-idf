@@ -67,6 +67,7 @@ RUN apt-get -y update && \
     bison \
     gperf \
     cmake \
+    build-essential \
     ninja-build \
     ccache \
     libffi-dev \
@@ -91,6 +92,9 @@ RUN apt-get clean -y && \
 # Set up directories
 RUN mkdir -p /workspace/.vscode && \
     mkdir -p /opt/toolchains
+
+# Copy workspace configuration
+COPY scripts/esp-idf/esp-idf.code-workspace /esp-idf.code-workspace
 
 # Set up sshd working directory
 RUN mkdir -p /var/run/sshd && \
@@ -168,9 +172,6 @@ RUN cd /tmp && \
     rm cmake-tools.vsix && \
     rm hexeditor.vsix
 
-# Copy workspace configuration
-COPY scripts/esp-idf/esp-idf.code-workspace /esp-idf.code-workspace
-
 #-------------------------------------------------------------------------------
 # Mosquitto Configuration
 
@@ -194,13 +195,16 @@ COPY scripts/esp-idf/openssl.cnf /etc/ssl/openssl.cnf
 # Add host's hostname to SAN list in OpenSSL configuration
 RUN echo "DNS.2 = ${HOSTNAME}.local" >> /etc/ssl/openssl.cnf
 
-# Generate CA Key and Certificate
-RUN openssl genrsa -out /etc/mosquitto/ca_certificates/ca.key 4096 && \
-    openssl req \
-        -new -x509 -days 36500 \
-        -key /etc/mosquitto/ca_certificates/ca.key \
-        -out /etc/mosquitto/ca_certificates/ca.crt \
-        -subj "/C=US/ST=Colorado/L=Denver/O=mosquitto/CN=custom-ca"
+# Copy in CA key and certificate (generated using Dockerfile.ca-gen)
+RUN mkdir -p /etc/mosquitto/ca_certificates
+COPY scripts/esp-idf/ca.crt /etc/mosquitto/ca_certificates/ca.crt
+COPY scripts/esp-idf/ca.key /etc/mosquitto/ca_certificates/ca.key
+
+# Set permissions for CA key and certificate
+RUN chown -R mosquitto:mosquitto /etc/mosquitto/ca_certificates && \
+    chmod 755 /etc/mosquitto/ca_certificates && \
+    chmod 644 /etc/mosquitto/ca_certificates/ca.crt && \
+    chmod 600 /etc/mosquitto/ca_certificates/ca.key
 
 # Generate Server Key and Certificate Signing Request (CSR)
 RUN openssl genrsa -out /etc/mosquitto/certs/server.key 4096 && \
@@ -210,7 +214,7 @@ RUN openssl genrsa -out /etc/mosquitto/certs/server.key 4096 && \
         -out /etc/mosquitto/certs/server.csr \
         -config /etc/ssl/openssl.cnf
 
-# Option 1: Generate Server Certificate (expires in 100 years)
+# Generate Server Certificate (expires in 100 years)
 RUN openssl x509 \
         -req \
         -CAcreateserial \
@@ -220,20 +224,13 @@ RUN openssl x509 \
         -CAkey /etc/mosquitto/ca_certificates/ca.key \
         -out /etc/mosquitto/certs/server.crt \
         -extensions req_ext \
-        -extfile /etc/ssl/openssl.cnf && \
-    chown -R mosquitto:mosquitto /etc/mosquitto/ca_certificates && \
-    chmod 755 /etc/mosquitto/ca_certificates && \
-    chmod 644 /etc/mosquitto/ca_certificates/ca.crt && \
-    chmod 600 /etc/mosquitto/ca_certificates/ca.key && \
-    chown -R mosquitto:mosquitto /etc/mosquitto/certs && \
+        -extfile /etc/ssl/openssl.cnf
+
+# Set permissions for server key and certificate
+RUN chown -R mosquitto:mosquitto /etc/mosquitto/certs && \
     chmod 755 /etc/mosquitto/certs && \
     chmod 644 /etc/mosquitto/certs/server.crt && \
     chmod 600 /etc/mosquitto/certs/server.key
-
-# Option 2: Copy existing, pre-generated certificates and key
-# COPY scripts/mosquitto/ca.crt /etc/mosquitto/ca_certificates/ca.crt
-# COPY scripts/mosquitto/server.crt /etc/mosquitto/certs/server.crt
-# COPY scripts/mosquitto/server.key /etc/mosquitto/certs/server.key
 
 #-------------------------------------------------------------------------------
 # Optional Settings

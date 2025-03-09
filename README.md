@@ -1,82 +1,8 @@
 > **IMPORTANT!** This material is a work in progress.
 
-## TEMPORARY: How to Test WAP3
-
- 1. Follow the instructions below for setting up the [Development Environment](#development-environment) for ESP-IDF
- 2. In a terminal (in the Docker container), navigate into the *http_request/* directory.
-
-```sh
-cd /workspace/apps/http_request/
-```
-
- 3. Change your target in *sdkconfig.defaults* to your intended ESP32 variant. For example:
-
-```sh
-CONFIG_IDF_TARGET="esp32s3"
-```
-
- 4. Bring up *menuconfig*
-
-```sh
-idf.py menuconfig
-```
-
- 5. Adjust the settings in **Component config → WiFi STA Configuration**
-    * Enable **Connect using WiFi**
-    * Set **IP version** (IPv4, IPv6, or either)
-    * Change **Minimum WiFi authentication mode** to **WPA3 PSK**
-    * Set your **WiFi SSID** and **WiFi password** (if using PSK)
-    * Set **SAE mode** and **Password identifier for SAE** (if applicable)
- 6. Press `q` and `y` to save and exit
- 7. Build the project:
-
-```sh
-idf.py build
-```
-
- 8. Back on your host computer (outside the container), navigate to this directory and activate the virtual environment:
-
-*Linux/macOS:*
-
-```sh
-source venv/bin/activate
-```
-
-*Windows (PowerShell):*
-
-```bat
-venv\Scripts\activate
-```
-
- 9. Flash the project (change `<SERIAL_PORT>` to the serial port of your ESP32, such as `COM3` for Windows, `/dev/ttyUSB0` for Linux, or `/dev/cu.usbserial-1401` for macOS):
-
-*ESP32-S3* (bootloader at 0x0):
-
-```sh
-cd workspace/apps/http_request
-python -m esptool --port "<SERIAL_PORT>" --chip auto --baud 921600 --before default_reset --after hard_reset write_flash --flash_mode dio --flash_freq 40m --flash_size detect 0x0 build/bootloader/bootloader.bin 0x8000 build/partition_table/partition-table.bin 0x10000 build/app.bin
-```
-
-*Other ESP32 variants* (bootloader at 0x1000):
-
-```sh
-cd workspace/apps/http_request
-python -m esptool --port "<SERIAL_PORT>" --chip auto --baud 921600 --before default_reset --after hard_reset write_flash --flash_mode dio --flash_freq 40m --flash_size detect 0x1000 build/bootloader/bootloader.bin 0x8000 build/partition_table/partition-table.bin 0x10000 build/app.bin
-```
-
-10. Monitor with a serial connection (change `<SERIAL_PORT>` to the serial port of your ESP32):
-
-```sh
-python -m serial.tools.miniterm "<SERIAL_PORT>" 115200
-```
-
-11. You should see the contents of [example.com](https://example.com/index.html) printed to the console after a few moments.
-12. If you see any errors (especially as it relates to WPA3), please let me know in the **issues** or submit a **pull request** if you know how to fix it!
-
-
 ## Development Environment
 
-This is a development environment for experimenting with MCUboot for various embedded development frameworks. The idea is to run the development environment (and QEMU runtime) in a Docker container, and you connect to that container using a browser or local VS Code. You can emulate your code with QEMU or flash a real board using your host system.
+This is a development environment for the *IoT Firmware Development with ESP32 Using ESP-IDF* course. The idea is to run the development environment (and QEMU runtime) in a Docker container, and you connect to that container using a browser or local VS Code. You can emulate your code with QEMU or flash a real board using your host system.
 
 > **Note**: the instructions below were verified with Python 3.12 running on the host system. If one of the *pip install* steps fails, try installing exactly Python 3.12 and running the command again with `python3.12 -m pip install ...`
 
@@ -102,7 +28,7 @@ Windows users will likely need to install the [virtual COM port (VCP) drivers fr
 
 Open a terminal, navigate to this directory, and install the following dependencies:
 
-*Linux/macOS:*
+Linux/macOS:
 
 ```sh
 python -m venv venv
@@ -110,7 +36,7 @@ source venv/bin/activate
 python -m pip install pyserial==3.5 esptool==4.8.1
 ```
 
-*Windows (PowerShell):*
+Windows (PowerShell):
 
 ```bat
 Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy Unrestricted -Force
@@ -180,3 +106,49 @@ I recommend installing the following VS Code extensions to make working with Zep
  * [C/C++](https://marketplace.visualstudio.com/items?itemName=ms-vscode.cpptools)AZ
  * [CMake Tools](https://marketplace.visualstudio.com/items?itemName=ms-vscode.cmake-tools)
  * [Microsoft Hex Editor](https://marketplace.visualstudio.com/items?itemName=ms-vscode.hexeditor)
+
+## Regenerate Certificate Authority (CA) Key and Certificate
+
+> **WARNING!** Only do this if you know what you are doing. This can break your applications in the ESP-IDF container if the *ca.crt* used to sign the Mosquitto server's certificate and the *ca.crt* uploaded to the ESP32 flash do not match.
+
+Generate new CA key and certificate, and copy them into the *scripts/esp-idf* directory.
+
+Linux/macOS:
+
+```sh
+docker build -t ca-gen -f Dockerfile.ca-gen .
+docker run --rm -v "$(pwd)/scripts/esp-idf:/output" ca-gen
+docker image rm ca-gen
+```
+
+Windows (PowerShell):
+
+```
+docker build -t ca-gen -f Dockerfile.ca-gen .
+docker run --rm -v "${PWD}/scripts/esp-idf:/output" ca-gen
+docker image rm ca-gen
+```
+
+You can now rebuild the ESP-IDF image, and the newly generated CA key and certificate will be copied into the image.
+
+> **Note:** Yes, I know *ca.key* is not secure by sharing it. It is for *educational purposes only*. For creating an actual server with self-signed certificates, you will want to generate *ca.key* and *ca.crt*; do NOT share *ca.key*!
+
+## License
+
+All software in this repository, unless otherwise noted, is licensed under the [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0) license.
+
+``` 
+Copyright 2025 Shawn Hymel
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+```

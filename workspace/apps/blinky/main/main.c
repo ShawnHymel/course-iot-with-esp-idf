@@ -4,7 +4,7 @@
 #include "freertos/FreeRTOS.h"
 
 // Settings
-static const gpio_num_t led_pin = GPIO_NUM_21;
+static const gpio_num_t led_pin = GPIO_NUM_4;
 static const uint32_t sleep_time_ms = 1000;
 
 void app_main(void)

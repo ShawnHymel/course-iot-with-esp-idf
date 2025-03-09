@@ -76,16 +76,16 @@ bool wait_for_network(EventGroupHandle_t network_event_group,
     EventBits_t network_event_bits;
 
     // Wait for network to connect
-    ESP_LOGI(TAG, "Waiting for WiFi to connect...");
+    ESP_LOGI(TAG, "Waiting for network to connect...");
     network_event_bits = xEventGroupWaitBits(network_event_group, 
                                              NETWORK_CONNECTED_BIT, 
                                              pdFALSE, 
                                              pdTRUE, 
                                              pdMS_TO_TICKS(timeout_sec * 1000));
     if (network_event_bits & NETWORK_CONNECTED_BIT) {
-        ESP_LOGI(TAG, "Connected to WiFi");
+        ESP_LOGI(TAG, "Connected to network");
     } else {
-        ESP_LOGE(TAG, "Failed to connect to WiFi");
+        ESP_LOGE(TAG, "Failed to connect to network");
         return false;
     }
 

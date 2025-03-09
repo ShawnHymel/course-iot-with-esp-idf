@@ -119,6 +119,9 @@ void app_main(void)
     int msg_id;
     EventGroupHandle_t network_event_group;
 
+    //%%%TEST
+    esp_log_level_set("transport_base", ESP_LOG_VERBOSE);
+
     // Welcome message (after delay to allow serial connection)
     vTaskDelay(2000 / portTICK_PERIOD_MS);
     ESP_LOGI(TAG, "Starting MQTT demo");
@@ -189,7 +192,6 @@ void app_main(void)
     //     .credentials.authentication.password = "mosquitto",
     // };
     // %%%TEST%%%
-    esp_log_level_set("*", ESP_LOG_VERBOSE);
     esp_mqtt_client_config_t mqtt_cfg = {
         .broker.address.hostname = "10.0.2.2",
         .broker.address.transport = MQTT_TRANSPORT_OVER_SSL,

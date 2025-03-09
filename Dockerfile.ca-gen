@@ -1,0 +1,44 @@
+# Use this Dockerfile to generate new Certificate Authority key and certificate
+
+# Settings
+ARG DEBIAN_VERSION=stable-20241223-slim
+
+# Use Debian as the base image
+FROM debian:${DEBIAN_VERSION}
+
+# Redeclare arguments after FROM
+ARG TARGETARCH
+
+# Set default shell during Docker image build to bash
+SHELL ["/bin/bash", "-c"]
+
+# Check if the target architecture is either x86_64 (amd64) or arm64 (aarch64)
+RUN if [ "$TARGETARCH" = "amd64" ] || [ "$TARGETARCH" = "arm64" ]; then \
+        echo "Architecture $TARGETARCH is supported."; \
+    else \
+        echo "Unsupported architecture: $TARGETARCH"; \
+        exit 1; \
+    fi
+
+# Set non-interactive frontend for apt-get to skip any user confirmations
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install dependencies
+RUN apt-get -y update && \
+    apt-get install --no-install-recommends -y \
+    openssl
+
+# Clean up
+RUN apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Create the output directory inside the container
+RUN mkdir -p /output
+
+# Set permissions so the container user can write to it
+RUN chmod 755 /output
+
+# Custom entrypoint
+COPY scripts/ca/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
