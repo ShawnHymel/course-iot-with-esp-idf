@@ -1,0 +1,6 @@
+# Create a new option in menuconfig
+config SAY_HELLO
+    bool "Basic print test to console"
+    default n   # Set the library to be disabled by default
+    help
+        Adds say_hello() function to print a basic message to the console.

@@ -33,47 +33,6 @@ static const char *REQUEST = "GET " WEB_PATH " HTTP/1.0\r\n"
 // Tag for debug messages
 static const char *TAG = "http_request";
 
-// Wait for network connection (with IP address)
-static bool wait_for_network(EventGroupHandle_t network_event_group)
-{
-    EventBits_t network_event_bits;
-
-    // Wait for network to connect
-    ESP_LOGI(TAG, "Waiting for WiFi to connect...");
-    network_event_bits = xEventGroupWaitBits(network_event_group, 
-                                             NETWORK_CONNECTED_BIT, 
-                                             pdFALSE, 
-                                             pdTRUE, 
-                                             CONNECTION_TIMEOUT_SEC * 1000 / 
-                                                portTICK_PERIOD_MS);
-    if (network_event_bits & NETWORK_CONNECTED_BIT) {
-        ESP_LOGI(TAG, "Connected to WiFi");
-    } else {
-        ESP_LOGE(TAG, "Failed to connect to WiFi");
-        return false;
-    }
-
-    // Wait for IP address
-    ESP_LOGI(TAG, "Waiting for IP address...");
-    network_event_bits = xEventGroupWaitBits(network_event_group, 
-                                             NETWORK_IPV4_OBTAINED_BIT | 
-                                             NETWORK_IPV6_OBTAINED_BIT, 
-                                             pdFALSE, 
-                                             pdTRUE, 
-                                             CONNECTION_TIMEOUT_SEC * 1000 / 
-                                                portTICK_PERIOD_MS);
-    if (network_event_bits & NETWORK_IPV4_OBTAINED_BIT) {
-        ESP_LOGI(TAG, "Connected to IPv4 network");
-    } else if (network_event_bits & NETWORK_IPV6_OBTAINED_BIT) {
-        ESP_LOGI(TAG, "Connected to IPv6 network");
-    } else {
-        ESP_LOGE(TAG, "Failed to obtain IP address");
-        return false;
-    }
-
-    return true;
-}
-
 // Main app entrypoint
 void app_main(void)
 {
@@ -133,7 +92,7 @@ void app_main(void)
     while (1) {
 
         // Make sure network is connected and has an IP address
-        if (!wait_for_network(network_event_group)) {
+        if (!wait_for_network(network_event_group, CONNECTION_TIMEOUT_SEC)) {
             ESP_LOGE(TAG, "Failed to connect to WiFi. Reconnecting...");
             esp_ret = network_reconnect();
             if (esp_ret != ESP_OK) {

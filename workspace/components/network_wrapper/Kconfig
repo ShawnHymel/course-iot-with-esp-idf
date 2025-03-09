@@ -1,0 +1,7 @@
+config SIMPLE_NETWORK_WRAPPER
+    bool "Simple network wrapper"
+    default n
+    help
+        Enables a common interface for the Ethernet QEMU (ETHERNET_QEMU_CONNECT)
+        driver or the WiFi STA (WIFI_STA_CONNECT) driver. You must enable one
+        (and only one) of those drivers for this wrapper to work.

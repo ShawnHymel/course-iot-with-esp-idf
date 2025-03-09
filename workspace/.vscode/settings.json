@@ -5,6 +5,9 @@
         "cstdlib": "c",
         "esp_eth.h": "c",
         "esp_eth_driver.h": "c",
-        "esp_eth_mac_openeth.h": "c"
+        "esp_eth_mac_openeth.h": "c",
+        "network_wrapper.h": "c",
+        "esp_log.h": "c",
+        "nvs_flash.h": "c"
     }
 }

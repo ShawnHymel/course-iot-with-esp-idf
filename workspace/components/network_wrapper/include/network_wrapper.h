@@ -9,34 +9,36 @@
 #include "esp_event.h"
 
 // Set constants based on network driver selected in menuconfig
-#if CONFIG_WIFI_STA_CONNECT && !CONFIG_ETHERNET_QEMU_CONNECT
-# define NETWORK_CONNECTED_BIT      WIFI_STA_CONNECTED_BIT
-# define NETWORK_IPV4_OBTAINED_BIT  WIFI_STA_IPV4_OBTAINED_BIT
-# define NETWORK_IPV6_OBTAINED_BIT  WIFI_STA_IPV6_OBTAINED_BIT
-# if CONFIG_WIFI_STA_CONNECT_IPV4
-#  define WEB_FAMILY                AF_INET
-# elif CONFIG_WIFI_STA_CONNECT_IPV6
-#  define WEB_FAMILY                AF_INET6
-# elif CONFIG_WIFI_STA_CONNECT_UNSPECIFIED
-#  define WEB_FAMILY                AF_UNSPEC
+#ifdef CONFIG_SIMPLE_NETWORK_WRAPPER
+# if CONFIG_WIFI_STA_CONNECT && !CONFIG_ETHERNET_QEMU_CONNECT
+#  define NETWORK_CONNECTED_BIT      WIFI_STA_CONNECTED_BIT
+#  define NETWORK_IPV4_OBTAINED_BIT  WIFI_STA_IPV4_OBTAINED_BIT
+#  define NETWORK_IPV6_OBTAINED_BIT  WIFI_STA_IPV6_OBTAINED_BIT
+#  if CONFIG_WIFI_STA_CONNECT_IPV4
+#   define WEB_FAMILY                AF_INET
+#  elif CONFIG_WIFI_STA_CONNECT_IPV6
+#   define WEB_FAMILY                AF_INET6
+#  elif CONFIG_WIFI_STA_CONNECT_UNSPECIFIED
+#   define WEB_FAMILY                AF_UNSPEC
+#  else
+#   error Please select an IP family from WiFi STA driver config in menuconfig
+#  endif
+# elif CONFIG_ETHERNET_QEMU_CONNECT && !CONFIG_WIFI_STA_CONNECT
+#  define NETWORK_CONNECTED_BIT      ETHERNET_QEMU_CONNECTED_BIT
+#  define NETWORK_IPV4_OBTAINED_BIT  ETHERNET_QEMU_IPV4_OBTAINED_BIT
+#  define NETWORK_IPV6_OBTAINED_BIT  ETHERNET_QEMU_IPV6_OBTAINED_BIT
+#  if CONFIG_ETHERNET_QEMU_CONNECT_IPV4
+#   define WEB_FAMILY                AF_INET
+#  elif CONFIG_ETHERNET_QEMU_CONNECT_IPV6
+#   define WEB_FAMILY                AF_INET6
+#  elif CONFIG_ETHERNET_QEMU_CONNECT_UNSPECIFIED
+#   define WEB_FAMILY                AF_UNSPEC
+#  else
+#   error Please select an IP family from QEMU Ethernet driver config in menuconfig
+#  endif
 # else
-#  error Please select an IP family from WiFi STA driver config in menuconfig
+#  error Please select one (and only one) WiFi STA or QEMU Ethernet driver in menuconfig
 # endif
-#elif CONFIG_ETHERNET_QEMU_CONNECT && !CONFIG_WIFI_STA_CONNECT
-# define NETWORK_CONNECTED_BIT      ETHERNET_QEMU_CONNECTED_BIT
-# define NETWORK_IPV4_OBTAINED_BIT  ETHERNET_QEMU_IPV4_OBTAINED_BIT
-# define NETWORK_IPV6_OBTAINED_BIT  ETHERNET_QEMU_IPV6_OBTAINED_BIT
-# if CONFIG_ETHERNET_QEMU_CONNECT_IPV4
-#  define WEB_FAMILY                AF_INET
-# elif CONFIG_ETHERNET_QEMU_CONNECT_IPV6
-#  define WEB_FAMILY                AF_INET6
-# elif CONFIG_ETHERNET_QEMU_CONNECT_UNSPECIFIED
-#  define WEB_FAMILY                AF_UNSPEC
-# else
-#  error Please select an IP family from QEMU Ethernet driver config in menuconfig
-# endif
-#else
-# error Please select one (and only one) WiFi STA or QEMU Ethernet driver in menuconfig
 #endif
 
 /**
