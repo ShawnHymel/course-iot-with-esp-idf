@@ -95,7 +95,7 @@ bool wait_for_network(EventGroupHandle_t network_event_group,
                                              NETWORK_IPV4_OBTAINED_BIT | 
                                              NETWORK_IPV6_OBTAINED_BIT, 
                                              pdFALSE, 
-                                             pdTRUE, 
+                                             pdFALSE, 
                                              pdMS_TO_TICKS(timeout_sec * 1000));
     if (network_event_bits & NETWORK_IPV4_OBTAINED_BIT) {
         ESP_LOGI(TAG, "Connected to IPv4 network");
