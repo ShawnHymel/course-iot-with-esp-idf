@@ -11,6 +11,7 @@
 // Set constants based on network driver selected in menuconfig
 #ifdef CONFIG_SIMPLE_NETWORK_WRAPPER
 # if CONFIG_WIFI_STA_CONNECT && !CONFIG_ETHERNET_QEMU_CONNECT
+#  include "wifi_sta.h"
 #  define NETWORK_CONNECTED_BIT      WIFI_STA_CONNECTED_BIT
 #  define NETWORK_IPV4_OBTAINED_BIT  WIFI_STA_IPV4_OBTAINED_BIT
 #  define NETWORK_IPV6_OBTAINED_BIT  WIFI_STA_IPV6_OBTAINED_BIT
@@ -24,6 +25,7 @@
 #   error Please select an IP family from WiFi STA driver config in menuconfig
 #  endif
 # elif CONFIG_ETHERNET_QEMU_CONNECT && !CONFIG_WIFI_STA_CONNECT
+#  include "ethernet_qemu.h"
 #  define NETWORK_CONNECTED_BIT      ETHERNET_QEMU_CONNECTED_BIT
 #  define NETWORK_IPV4_OBTAINED_BIT  ETHERNET_QEMU_IPV4_OBTAINED_BIT
 #  define NETWORK_IPV6_OBTAINED_BIT  ETHERNET_QEMU_IPV6_OBTAINED_BIT

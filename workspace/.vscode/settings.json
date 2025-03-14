@@ -8,6 +8,8 @@
         "esp_eth_mac_openeth.h": "c",
         "network_wrapper.h": "c",
         "esp_log.h": "c",
-        "nvs_flash.h": "c"
+        "nvs_flash.h": "c",
+        "i2c_master.h": "c",
+        "stdio.h": "c"
     }
 }

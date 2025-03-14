@@ -18,15 +18,19 @@
 static const uint32_t sleep_time_ms = 5000;
 
 // Server settings and URL to fetch
-#define WEB_HOST "example.com"
+#define WEB_HOST "demo.thingsboard.io"
 #define WEB_PORT "80"
-#define WEB_PATH "/"
+#define WEB_PATH "/api/v1/z2ahr2c62b0xcfwo1l3w/telemetry"
 
-// HTTP GET request
-static const char *REQUEST = "GET " WEB_PATH " HTTP/1.0\r\n"
-    "Host: "WEB_HOST":"WEB_PORT"\r\n"
+// HTTP POST request
+static const char *REQUEST = 
+    "POST " WEB_PATH " HTTP/1.0\r\n"
+    "Host: " WEB_HOST ":" WEB_PORT "\r\n"
     "User-Agent: esp-idf/1.0 esp32\r\n"
-    "\r\n";
+    "Content-Type: application/json\r\n"
+    "Content-Length: 9\r\n"
+    "\r\n"
+    "{temp:25}";
 
 // Set timeouts
 #define SOCKET_TIMEOUT_SEC      5   // Set socket timeout in seconds
@@ -116,7 +120,7 @@ void app_main(void)
         ret = getaddrinfo(WEB_HOST, WEB_PORT, &hints, &dns_res);
         if (ret != 0 || dns_res== NULL) {
             ESP_LOGE(TAG, "DNS lookup failed (%d)", ret);
-            vTaskDelay(1000 / portTICK_PERIOD_MS);
+            vTaskDelay(sleep_time_ms / portTICK_PERIOD_MS);
             continue;
         }
 

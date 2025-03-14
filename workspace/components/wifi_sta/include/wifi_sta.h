@@ -51,4 +51,4 @@ esp_err_t wifi_sta_stop(void);
  */
 esp_err_t wifi_sta_reconnect(void);
 
-#endif // WIFI_H
+#endif // WIFI_STA_H
