@@ -25,8 +25,6 @@ static const uint32_t sleep_time_ms = 5000;
 #define THINGSBOARD_HOST "demo.thingsboard.io"
 #define THINGSBOARD_PATH "/api/v1/" API_KEY "/telemetry"
 
-
-
 // Tag for debug messages
 static const char *TAG = "http_thingsboard_demo";
 

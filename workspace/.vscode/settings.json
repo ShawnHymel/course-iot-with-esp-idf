@@ -10,6 +10,7 @@
         "esp_log.h": "c",
         "nvs_flash.h": "c",
         "i2c_master.h": "c",
-        "stdio.h": "c"
+        "stdio.h": "c",
+        "mqtt_client.h": "c"
     }
 }

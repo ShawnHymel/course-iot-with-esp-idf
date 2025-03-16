@@ -27,8 +27,8 @@ static const char *TAG = "mqtt_demo";
 #define MQTT_USERNAME           "iot"
 #define MQTT_PASSWORD           "mosquitto"
 #define MQTT_QOS                2               // Quality of Service (0, 1, 2)
-#define MQTT_TEST_TOPIC         "my_topic/sensor_data"
-#define MQTT_TEST_MSG           "{\"temperature\": 25.0, \"humidity\": 50.0}"
+#define MQTT_TOPIC         "my_topic/sensor_data"
+#define MQTT_MSG           "{\"temperature\": 25.0, \"humidity\": 50.0}"
 
 // Event group bits
 #define MQTT_CONNECTED_BIT      BIT0
@@ -211,7 +211,7 @@ void app_main(void)
 
     // Subscribe to a topic
     msg_id = esp_mqtt_client_subscribe(mqtt_client, 
-                                       MQTT_TEST_TOPIC, 
+                                       MQTT_TOPIC, 
                                        MQTT_QOS);
     if (msg_id < 0) {
         ESP_LOGE(TAG, "Error (%d): Failed to subscribe to topic", msg_id);
@@ -224,8 +224,8 @@ void app_main(void)
 
         // Publish message to MQTT broker
         msg_id = esp_mqtt_client_publish(mqtt_client, 
-                                         MQTT_TEST_TOPIC, 
-                                         MQTT_TEST_MSG, 
+                                         MQTT_TOPIC, 
+                                         MQTT_MSG, 
                                          0,         // Length (0 = auto detect)
                                          MQTT_QOS,  // QoS
                                          0);        // Retain
