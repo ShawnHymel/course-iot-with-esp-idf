@@ -49,6 +49,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Install base packages
 RUN apt-get -y update && \
 	apt-get install --no-install-recommends -y \
+    dos2unix \
     wget \
     curl \
     git \
@@ -263,5 +264,6 @@ RUN /bin/bash -c "source /opt/toolchains/esp-idf/export.sh && \
     
 # Custom entrypoint
 COPY scripts/esp-idf/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+RUN chmod +x /entrypoint.sh && \
+    dos2unix /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

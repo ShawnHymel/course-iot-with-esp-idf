@@ -45,10 +45,10 @@ venv\Scripts\activate
 python -m pip install pyserial==3.5 esptool==4.8.1
 ```
 
-From this directory, build the image (this will take some time):
+From this directory, build the image (this will take some time). Note that we pass in the computer's hostname so it can be added as a Subject Alternative Name (SAN) in the OpenSSL configuration. This allows TLS connections to use mDNS to connect to the host and verify the Common Name (or SAN) using `<MY_HOSTNAME>.local` in addition to `localhost`.
 
 ```sh
-docker build -t env-esp-idf -f Dockerfile.esp-idf .
+docker build -t env-esp-idf -f Dockerfile.esp-idf --build-arg HOSTNAME=$(hostname) .
 ```
 
 You can ignore the warning about setting the password as an `ARG` in the Dockerfile. The container is fairly unsecure anyway; I only recommend running it locally when you need it. You will need to change the password and configure *code-server* and *sshd* to be more secure if you want to use it remotely.
