@@ -91,7 +91,7 @@ Go to **File > Open Workspace from File..** and select the **/esp-idf.code-works
 
 #### Option 3: VS Code SSH
 
-If you want to develop Zephyr applications using your local instance of VS Code, you can connect to the running container using SSH. This will allow you to use your custom themes, extensions, settings, etc.
+If you want to develop ESP-IDF applications using your local instance of VS Code, you can connect to the running container using SSH. This will allow you to use your custom themes, extensions, settings, etc.
 
 In your local VS Code, install the [Remote - SSH extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-ssh).
 
