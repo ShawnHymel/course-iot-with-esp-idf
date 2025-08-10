@@ -55,16 +55,10 @@ You can ignore the warning about setting the password as an `ARG` in the Dockerf
 
 Run the image in *VS Code Server* mode. Note that it mounts the local *workspace/* directory into the container! We also expose ports 3333 (OpenOCD), 2223 (mapped from 22 within the container for SSH), and 8800 (*code-server*).
 
-Linux/macOS:
+Linux, macOS, Windows (PowerShell):
 
 ```sh
-docker run --rm -it -p 3333:3333 -p 22001:22 -p 8800:8800 -v "$(pwd)"/workspace:/workspace -w /workspace env-esp-idf
-```
-
-Windows (PowerShell):
-
-```bat
-docker run --rm -it -p 3333:3333 -p 22001:22 -p 8800:8800 -v "${PWD}\workspace:/workspace" -w /workspace env-esp-idf
+docker run --rm -it -p 1883:1883 -p 8080:8080 -p 8081:8081 -p 8800:8800 -p 8883:8883 -p 22001:22 -v "$(pwd)/workspace:/workspace" -w /workspace env-esp-idf
 ```
 
 > **IMPORTANT**: The *entrypoint.sh* script will copy *c_cpp_properties.json* to your *workspace/.vscode* directory every time you run the image. This file helps *IntelliSense* know where to find things. Don't mess with this file!
@@ -101,9 +95,9 @@ Connect and login using the password in the Dockerfile (default: `fota`). Go to 
 
 ### Recommended Extensions
 
-I recommend installing the following VS Code extensions to make working with Zephyr easier (e.g. IntelliSense). Note that the *.code-workspace* file will automatically recommend them.
+I recommend installing the following VS Code extensions to make working with ESP-IDF easier (e.g. IntelliSense). Note that the *.code-workspace* file will automatically recommend them.
 
- * [C/C++](https://marketplace.visualstudio.com/items?itemName=ms-vscode.cpptools)AZ
+ * [C/C++](https://marketplace.visualstudio.com/items?itemName=ms-vscode.cpptools)
  * [CMake Tools](https://marketplace.visualstudio.com/items?itemName=ms-vscode.cmake-tools)
  * [Microsoft Hex Editor](https://marketplace.visualstudio.com/items?itemName=ms-vscode.hexeditor)
 

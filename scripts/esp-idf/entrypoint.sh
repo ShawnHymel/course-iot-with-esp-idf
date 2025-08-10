@@ -4,7 +4,7 @@
 source $HOME/.bashrc
 
 # Enable ESP-IDF
-. /opt/toolchains/esp-idf/export.sh
+# . /opt/toolchains/esp-idf/export.sh
 
 # Set global environment variables
 source /etc/environment
@@ -20,7 +20,7 @@ cp /c_cpp_properties.json /workspace/.vscode/c_cpp_properties.json
 /usr/sbin/sshd
 
 # Start avahi daemon
-avahi-daemon &
+# avahi-daemon &
 
 # Run Mosquitto server
 /usr/sbin/mosquitto -c /etc/mosquitto/mosquitto.conf -d
