@@ -1,4 +1,6 @@
-> **IMPORTANT!** This material is a work in progress.
+Welcome to the repository for the [IoT Firmware Development with ESP32 and ESP-IDF course](https://learnembedded.dev/courses/iot-firmware-development-with-esp32-and-esp-idf/)! You can find all of the examples used in the course in the *workspace/* folder. See below to learn how to build the container used to compile the examples.
+
+[![IoT Firmware Development with ESP32 and ESP-IDF course](images/thumbnail-esp32-iot.png)](https://learnembedded.dev/courses/iot-firmware-development-with-esp32-and-esp-idf/)
 
 ## Development Environment
 
