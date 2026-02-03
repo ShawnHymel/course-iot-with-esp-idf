@@ -181,7 +181,7 @@ COPY scripts/esp-idf/mosquitto.conf /etc/mosquitto/mosquitto.conf
 # Generate the password file with default username and password
 COPY scripts/esp-idf/generate_mosquitto_password.sh /generate_mosquitto_password.sh
 RUN chmod +x /generate_mosquitto_password.sh && \
-    /generate_mosquitto_password.sh ${MOSQUITTO_USERNAME} ${MOSQUITTO_PASSWORD}
+    /bin/bash /generate_mosquitto_password.sh ${MOSQUITTO_USERNAME} ${MOSQUITTO_PASSWORD}
 
 # Configure PID file
 RUN mkdir -p /run/mosquitto && \
